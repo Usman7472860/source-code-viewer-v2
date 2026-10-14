@@ -1,10 +1,25 @@
 {
-  "name": "websource-inspector",
-  "version": "1.0.0",
-  "description": "Full HTML/CSS/JS Source Code Viewer & Heavy Print Engine",
-  "main": "index.html",
+  "name": "us-mods-source-viewer",
+  "version": "2.1.0",
+  "private": true,
+  "description": "Heavy Pro Developer Suite: Source viewer, live preview, network interceptor, security scanner, SEO analyzer, and high-speed Python hardcoded API extractor",
+  "main": "server.js",
   "scripts": {
-    "start": "npx serve ."
+    "start": "node server.js",
+    "dev": "node server.js",
+    "python": "python3 server.py",
+    "scan": "python3 fast_extractor.py",
+    "test": "node -e \"require('./api/fetch.js'); require('./api/proxy.js'); console.log('Syntax OK');\""
   },
-  "license": "MIT"
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "source-viewer",
+    "python-scraper",
+    "hardcoded-api-extractor",
+    "api-finder",
+    "devtools",
+    "security-scanner"
+  ]
 }

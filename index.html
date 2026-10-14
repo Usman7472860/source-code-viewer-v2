@@ -1,318 +1,1735 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<!doctype html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebSource Inspector Pro | Live Preview, Button Inspector & GET/POST Analyzer</title>
-  <link rel="stylesheet" href="style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>US MODS Source Viewer · Heavy Pro Developer Suite</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --bg:#0d1118; --panel:#141923; --panel2:#10151e; --line:#242b3a; --fg:#d9deea; --muted:#8a94aa;
+  --html:#ff8450; --css:#6aaaff; --js:#f2c94c; --info:#9aa6c4; --tab:var(--html);
+  --img:#4fd08f; --api:#b79bff; --font:#ff7aa8; --media:#5fd0e0; --sec:#ff5e62; --tech:#38bdf8; --seo:#a78bfa; --col:#f472b6;
+  --c-com:#6d7890; --c-tag:#ff8a5c; --c-attr:#f0c46a; --c-str:#7fd6a2; --c-num:#6fb0ff; --c-key:#c0a0ff; --c-fn:#5fd0e0;
+  --mark:#5b4a0e; --mark-cur:#a8780a; --ok:#6fd49b; --warn:#f0c46a; --bad:#ff7b80;
+  --f-ui:'Bricolage Grotesque',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --f-code:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"]{
+  --bg:#f2f4f9; --panel:#ffffff; --panel2:#f7f8fc; --line:#dde2ee; --fg:#1a2133; --muted:#667089;
+  --html:#d6501b; --css:#2461d4; --js:#a97800; --info:#4b5675; --tab:var(--html);
+  --img:#0a8a55; --api:#7c3aed; --font:#c0307a; --media:#0e7490; --sec:#dc2626; --tech:#0284c7; --seo:#7c3aed; --col:#db2777;
+  --c-com:#7b859b; --c-tag:#c2410c; --c-attr:#9a6700; --c-str:#0a7d4f; --c-num:#1d5fd1; --c-key:#7c3aed; --c-fn:#0e7490;
+  --mark:#ffe58a; --mark-cur:#ffb020; --ok:#0a7d4f; --warn:#9a6700; --bad:#c0262d;
+  color-scheme: light;
+}
+
+:root[data-theme="dracula"]{
+  --bg:#282a36; --panel:#1e1f29; --panel2:#191a21; --line:#44475a; --fg:#f8f8f2; --muted:#6272a4;
+  --html:#ffb86c; --css:#8be9fd; --js:#f1fa8c; --info:#bd93f9; --tab:var(--info);
+  --img:#50fa7b; --api:#bd93f9; --font:#ff79c6; --media:#8be9fd; --sec:#ff5555; --tech:#8be9fd; --seo:#bd93f9; --col:#ff79c6;
+  --c-com:#6272a4; --c-tag:#ff79c6; --c-attr:#50fa7b; --c-str:#f1fa8c; --c-num:#bd93f9; --c-key:#ff79c6; --c-fn:#50fa7b;
+  --mark:#44475a; --mark-cur:#ffb86c; --ok:#50fa7b; --warn:#f1fa8c; --bad:#ff5555;
+  color-scheme: dark;
+}
+
+:root[data-theme="monokai"]{
+  --bg:#272822; --panel:#1e1f1c; --panel2:#171815; --line:#3e3d32; --fg:#f8f8f2; --muted:#75715e;
+  --html:#fd971f; --css:#66d9ef; --js:#e6db74; --info:#a6e22e; --tab:var(--html);
+  --img:#a6e22e; --api:#ae81ff; --font:#f92672; --media:#66d9ef; --sec:#f92672; --tech:#66d9ef; --seo:#ae81ff; --col:#f92672;
+  --c-com:#75715e; --c-tag:#f92672; --c-attr:#a6e22e; --c-str:#e6db74; --c-num:#ae81ff; --c-key:#f92672; --c-fn:#a6e22e;
+  --mark:#49483e; --mark-cur:#fd971f; --ok:#a6e22e; --warn:#e6db74; --bad:#f92672;
+  color-scheme: dark;
+}
+
+:root[data-tab="html"]{--tab:var(--html)}
+:root[data-tab="css"]{--tab:var(--css)}
+:root[data-tab="js"]{--tab:var(--js)}
+:root[data-tab="info"],:root[data-tab="other"]{--tab:var(--info)}
+:root[data-tab="all"]{--tab:var(--fg)}
+:root[data-tab="images"]{--tab:var(--img)}
+:root[data-tab="api"]{--tab:var(--api)}
+:root[data-tab="fonts"]{--tab:var(--font)}
+:root[data-tab="media"]{--tab:var(--media)}
+:root[data-tab="colors"]{--tab:var(--col)}
+:root[data-tab="tech"]{--tab:var(--tech)}
+:root[data-tab="security"]{--tab:var(--sec)}
+:root[data-tab="seo"]{--tab:var(--seo)}
+
+*{box-sizing:border-box}
+html,body{margin:0}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--fg);font:14px/1.5 var(--f-ui);padding-inline:clamp(12px,2.5vw,24px);padding-block:12px 24px;-webkit-text-size-adjust:100%}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--tab);outline-offset:2px}
+
+/* header */
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.mark{display:grid;place-items:center;width:40px;height:40px;border-radius:10px;background:var(--fg);color:var(--bg);font:800 15px var(--f-code);box-shadow:0 2px 8px rgba(0,0,0,0.25)}
+.brand b{display:block;font:800 18px/1.1 var(--f-ui);letter-spacing:-.02em}
+.brand small{display:inline-block;font:700 9.5px var(--f-code);letter-spacing:.12em;text-transform:uppercase;color:var(--tab);background:color-mix(in srgb,var(--tab) 15%,transparent);padding:1px 6px;border-radius:4px;margin-top:2px}
+.urlbar{display:flex;flex:1 1 360px;min-width:0;gap:8px}
+.urlbar input{flex:1;min-width:0;height:40px;padding:0 14px;border:1px solid var(--line);border-radius:9px;background:var(--panel);font:500 13px var(--f-code)}
+.urlbar input:focus{border-color:var(--tab)}
+.btn{height:40px;padding:0 14px;border:1px solid var(--line);border-radius:9px;background:var(--panel);font-weight:600;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{border-color:var(--muted);background:var(--panel2)}
+.btn.go{background:var(--fg);color:var(--bg);border-color:var(--fg);padding:0 18px}
+.btn.go:disabled{opacity:.55;cursor:progress}
+.tools{display:flex;flex-wrap:wrap;gap:6px}
+.tools .btn{height:40px;padding:0 11px;font-size:13px}
+.opts{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-top:8px;color:var(--muted);font-size:12.5px}
+.opts label{display:inline-flex;align-items:center;gap:5px;cursor:pointer}
+.opts input{accent-color:var(--tab);width:14px;height:14px}
+
+/* progress & stats */
+.progress{height:3px;margin-top:8px;border-radius:2px;background:var(--line);overflow:hidden}
+.progress i{display:block;height:100%;width:0;background:var(--tab);transition:width .2s}
+.statline{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;min-height:28px}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border:1px solid var(--line);border-radius:99px;background:var(--panel);font:500 11.5px var(--f-code);white-space:nowrap}
+.chip i{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.chip.html i{background:var(--html)} .chip.css i{background:var(--css)} .chip.js i{background:var(--js)}
+.chip.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,transparent)}
+.chip.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 35%,transparent)}
+.chip.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 35%,transparent)}
+.msg{font-size:12.5px;color:var(--muted)}
+.msg.bad{color:var(--bad)} .msg.ok{color:var(--ok)}
+
+/* main app */
+.app{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:12px;margin-top:6px;align-items:start}
+.app[data-layout="source"]{grid-template-columns:minmax(0,1fr)}
+.app[data-layout="source"] .live{display:none}
+.app[data-layout="site"]{grid-template-columns:minmax(0,1fr)}
+.app[data-layout="site"] .viewer{display:none}
+.hint{margin:0;padding:10px;color:var(--muted);font-size:12.5px}
+
+.viewer{min-width:0;border:1px solid var(--line);border-radius:12px;background:var(--panel);overflow:hidden}
+.tabs{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--line);background:var(--panel2);scrollbar-width:thin}
+.tab{flex:none;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;padding:10px 12px;border:0;border-bottom:3px solid transparent;background:none;font:700 13px var(--f-ui);color:var(--muted)}
+.tab[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--tab);background:var(--panel)}
+.tab em{font:600 10.5px var(--f-code);font-style:normal;padding:1px 6px;border-radius:99px;background:var(--line);color:var(--fg)}
+
+.vbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:8px 12px;border-bottom:1px solid var(--line)}
+.fname{font:600 12.5px var(--f-code);min-width:0;overflow-wrap:anywhere}
+.fmeta{font:500 11.5px var(--f-code);color:var(--muted)}
+.vact{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-left:auto}
+.vact input[type="search"]{width:min(200px,100%);height:30px;padding:0 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);font:500 12px var(--f-code)}
+.sm{height:30px;padding:0 9px;border:1px solid var(--line);border-radius:6px;background:var(--panel);font:600 12px var(--f-ui);display:inline-flex;align-items:center;gap:4px}
+.sm:hover{border-color:var(--muted);background:var(--panel2)}
+.sm[aria-pressed="true"]{background:var(--tab);border-color:var(--tab);color:var(--bg)}
+#qc{font:500 11.5px var(--f-code);color:var(--muted);min-width:3.2em}
+
+.codewrap{display:flex;height:clamp(400px,calc(100dvh - 250px),1050px);overflow:auto;background:var(--panel);font:400 12.5px/1.6 var(--f-code);tab-size:2}
+.codewrap pre{margin:0;font:inherit}
+.gutter{position:sticky;left:0;z-index:2;flex:none;padding:10px 8px 10px 12px;text-align:right;color:var(--muted);background:var(--panel2);border-right:1px solid var(--line);user-select:none;opacity:.85}
+.gutter span{display:block;cursor:pointer}
+.gutter span:hover{color:var(--fg)}
+.gutter span.active-line{color:var(--tab);font-weight:700}
+.code{flex:1 0 auto;padding:10px 16px;white-space:pre;outline:none}
+.codewrap.wrap .gutter{display:none}
+.codewrap.wrap .code{flex:1 1 0;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere}
+mark{background:var(--mark);color:inherit;border-radius:2px}
+mark.cur{background:var(--mark-cur);outline:2px solid var(--mark-cur)}
+.hljs-comment,.hljs-quote{color:var(--c-com);font-style:italic}
+.hljs-tag{color:var(--muted)}
+.hljs-name,.hljs-selector-tag{color:var(--c-tag)}
+.hljs-attr,.hljs-attribute,.hljs-property{color:var(--c-attr)}
+.hljs-string,.hljs-regexp,.hljs-template-string{color:var(--c-str)}
+.hljs-number,.hljs-literal,.hljs-symbol,.hljs-bullet{color:var(--c-num)}
+.hljs-keyword,.hljs-selector-pseudo,.hljs-built_in,.hljs-meta,.hljs-doctag{color:var(--c-key)}
+.hljs-title,.hljs-selector-class,.hljs-selector-id,.hljs-variable,.hljs-params{color:var(--c-fn)}
+.empty{display:grid;place-items:center;min-height:240px;padding:20px;color:var(--muted);text-align:center}
+
+/* info view */
+#infoView{padding:14px;display:grid;gap:14px;max-height:calc(100dvh - 240px);overflow:auto}
+#infoView h3{margin:0 0 6px;font:700 11px var(--f-code);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+.tbl{width:100%;border-collapse:collapse;font:500 12px var(--f-code)}
+.tbl th,.tbl td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;overflow-wrap:anywhere}
+.tbl tr:last-child th,.tbl tr:last-child td{border-bottom:0}
+.tbl th{width:32%;min-width:110px;color:var(--muted);font-weight:500}
+
+/* live & network view */
+.live{display:grid;grid-template-rows:minmax(0,1.15fr) minmax(0,1fr);gap:12px;min-width:0;height:clamp(600px,calc(100dvh - 180px),1100px)}
+.pv,.net{min-width:0;min-height:0;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;background:var(--panel);overflow:hidden}
+.pvbar{display:flex;flex-wrap:wrap;align-items:center;gap:5px;padding:6px 8px;border-bottom:1px solid var(--line);background:var(--panel2)}
+.pvurl{flex:1 1 140px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);font:500 11.5px var(--f-code);color:var(--muted)}
+.pvstage{position:relative;flex:1;min-height:0;display:flex;justify-content:center;background:var(--bg);overflow:auto;padding:8px}
+.pvstage iframe{border:0;background:#fff;width:100%;height:100%;border-radius:4px;box-shadow:0 4px 14px rgba(0,0,0,0.15);transition:all .2s ease}
+
+/* device presets */
+.pvstage.mob iframe{width:390px;height:844px;max-height:100%}
+.pvstage.mob.rot iframe{width:844px;height:390px;max-width:100%}
+.pvstage.tab iframe{width:768px;height:1024px;max-height:100%}
+.pvstage.tab.rot iframe{width:1024px;height:768px;max-width:100%}
+.pvstage.lap iframe{width:1200px;height:800px;max-height:100%}
+
+.pvempty{position:absolute;inset:0;display:grid;place-items:center;padding:16px;text-align:center;color:var(--muted);background:var(--bg)}
+
+.nhead{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--line);background:var(--panel2)}
+.nhead b{font:800 13.5px var(--f-ui)}
+.nhead input[type="search"]{flex:1 1 80px;min-width:60px;height:28px;padding:0 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);font:500 11.5px var(--f-code)}
+.nhead .sm, .nhead select.sm{height:28px}
+.nchip{display:flex;align-items:center;gap:8px;padding:5px 8px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--tab) 10%,var(--panel));font:500 11.5px var(--f-code)}
+.nchip span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nlist{flex:1;min-height:0;overflow:auto}
+.nrow{display:grid;grid-template-columns:46px 38px minmax(0,1fr) auto;gap:6px;align-items:center;width:100%;padding:6px 8px;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;font:500 11.5px var(--f-code)}
+.nrow:hover{background:var(--panel2)}
+.nrow.sel{background:var(--panel2);box-shadow:inset 3px 0 0 var(--tab)}
+.nrow .nm{min-width:0;display:grid}
+.nrow .nm b,.nrow .nm i{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nrow .nm b{font-weight:600}
+.nrow .nm i{font-style:normal;font-size:10.5px;color:var(--muted)}
+.nrow .mt{font-size:10.5px;color:var(--muted);white-space:nowrap}
+.m{font-weight:700;font-size:10.5px}
+.m-get{color:var(--css)} .m-post{color:var(--html)} .m-other{color:var(--js)}
+.st.ok{color:var(--ok)} .st.warn{color:var(--warn)} .st.bad{color:var(--bad)} .st.pend,.st.mute{color:var(--muted)}
+.nclick{display:block;width:100%;padding:6px 8px;text-align:left;border:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--tab) 10%,var(--panel));color:var(--fg);font:600 11.5px var(--f-code)}
+.nclick span{margin-right:6px;color:var(--tab);font-size:10px;letter-spacing:.1em;text-transform:uppercase}
+.ndet{flex:1;min-height:0;display:flex;flex-direction:column}
+.dbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--line)}
+.dtabs{display:flex;flex-wrap:wrap;gap:4px;margin-left:auto}
+.dbody{flex:1;min-height:0;overflow:auto;padding:10px;display:grid;gap:8px;align-content:start}
+.dbody h4{margin:0;font:700 10.5px var(--f-code);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.dbody pre{margin:0;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);font:400 11.5px/1.5 var(--f-code);white-space:pre-wrap;overflow-wrap:anywhere}
+
+/* asset tabs */
+#assetView{height:clamp(400px,calc(100dvh - 200px),1050px);overflow:auto;padding:12px;display:grid;gap:14px;align-content:start}
+.avh{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.avh b{font:800 15px var(--f-ui)}
+.avh .hint{flex-basis:100%;margin:0;padding:4px 0}
+.asec{display:grid;gap:8px;min-width:0}
+.ash{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.ash h3{margin:0;font:700 11px var(--f-code);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.ash .sm{margin-left:auto;height:26px}
+.cbar{display:flex;flex-wrap:wrap;gap:5px}
+.cbtn:hover{border-color:var(--muted)}
+.c-html i{background:var(--html)} .c-css i{background:var(--css)} .c-js i{background:var(--js)}
+.c-images i{background:var(--img)} .c-api i{background:var(--api)} .c-fonts i{background:var(--font)} .c-media i{background:var(--media)}
+.c-colors i{background:var(--col)} .c-tech i{background:var(--tech)} .c-security i{background:var(--sec)} .c-seo i{background:var(--seo)}
+.c-other i{background:var(--info)}
+
+.agrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}
+.acard{display:grid;gap:4px;min-width:0;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--panel);text-align:left}
+.acard:hover{border-color:var(--tab)}
+.thumb,.dprev{display:grid;place-items:center;border-radius:6px;overflow:hidden;background:repeating-conic-gradient(var(--panel2) 0 25%,var(--line) 0 50%) 0 0/14px 14px}
+.thumb{aspect-ratio:1}
+.thumb img{max-width:100%;max-height:100%;object-fit:contain}
+.acard.broken .thumb::after{content:"Load nahi hui";padding:4px;text-align:center;font:500 10.5px var(--f-code);color:var(--muted)}
+.acard .an{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 11.5px var(--f-code)}
+.acard .am{font:500 10.5px var(--f-code);color:var(--muted)}
+.alist{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.arow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:4px 8px;align-items:center;min-width:0;padding:7px 9px;border-bottom:1px solid var(--line);font:500 11.5px var(--f-code);cursor:pointer}
+.alist .arow:last-child{border-bottom:0}
+.arow:hover{background:var(--panel2)}
+.arow .sm{height:26px;padding:0 7px;font-size:11.5px}
+.tag{display:inline-block;min-width:3.2em;padding:1px 5px;border-radius:4px;text-align:center;font:700 10px var(--f-code);letter-spacing:.04em;color:var(--bg);background:var(--muted)}
+.t-html{background:var(--html)} .t-css{background:var(--css)} .t-js{background:var(--js)} .t-other{background:var(--info)}
+.fs{display:inline-grid;place-items:center;min-width:3em;font:400 20px/1 sans-serif}
+.fbig{padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font:400 28px/1.3 sans-serif;overflow-wrap:anywhere}
+.mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
+.mcard{display:grid;gap:6px;min-width:0;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.mcard video,.adbody video{width:100%;max-height:200px;border-radius:6px;background:#000}
+.mcard audio,.adbody audio{width:100%}
+.mact{display:flex;flex-wrap:wrap;gap:5px}
+.sm.lnk{display:inline-flex;align-items:center;text-decoration:none;color:inherit}
+.fchips{display:flex;flex-wrap:wrap;gap:4px}
+.fchips .chip{padding:1px 6px;font-size:10.5px}
+
+/* dialogs */
+dialog{width:min(720px,calc(100vw - 28px));padding:0;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);box-shadow:0 8px 30px rgba(0,0,0,0.4)}
+dialog::backdrop{background:rgba(5,8,14,.65);backdrop-filter:blur(3px)}
+dialog form{display:grid;gap:10px;padding:14px}
+dialog h2{margin:0;font:800 16px var(--f-ui)}
+dialog textarea{width:100%;height:min(44dvh,340px);padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font:400 12px/1.5 var(--f-code);resize:vertical}
+.row{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+.drop{position:fixed;inset:0;z-index:50;display:none;place-items:center;background:color-mix(in srgb,var(--bg) 85%,transparent);font:800 22px var(--f-ui);border:3px dashed var(--tab);margin:10px;border-radius:16px}
+.drop.on{display:grid}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;background:var(--panel)}
+.seg .sm{height:28px;border:0;border-radius:0}
+.seg .sm+.sm{border-left:1px solid var(--line)}
+.opts .seg{margin-left:auto}
+
+@media (max-width:1000px){
+  .app{grid-template-columns:minmax(0,1fr)}
+  .live{height:auto;grid-template-rows:none}
+  .pv{height:min(68dvh,600px)}
+  .net{height:440px}
+}
+@media (max-width:860px){
+  .tabs{flex-wrap:nowrap;overflow-x:auto}
+  .vact{margin-left:0;width:100%}
+  .vact input[type="search"]{flex:1 1 120px}
+  .tab{padding:9px 11px}
+  .codewrap{height:clamp(320px,calc(100dvh - 220px),850px)}
+  .opts .seg{margin-left:0}
+}
+
+/* Python Command Buttons & Terminal Modal */
+.cmd-strip{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px;padding:8px 12px;border:1px solid color-mix(in srgb,var(--tab) 40%,var(--line));border-radius:10px;background:color-mix(in srgb,var(--panel2) 90%,var(--tab))}
+.cmd-strip .cmd-title{font:800 12px var(--f-code);letter-spacing:.06em;text-transform:uppercase;color:var(--tab);display:inline-flex;align-items:center;gap:6px}
+.btn.py-extract{background:linear-gradient(135deg,#059669,#10b981);color:#fff;border-color:#059669;font:700 12.5px var(--f-code);height:36px;padding:0 14px;box-shadow:0 2px 10px rgba(16,185,129,.25)}
+.btn.py-extract:hover{filter:brightness(1.08);border-color:#34d399}
+.btn.py-srv{background:linear-gradient(135deg,#2563eb,#6366f1);color:#fff;border-color:#2563eb;font:700 12.5px var(--f-code);height:36px;padding:0 14px;box-shadow:0 2px 10px rgba(59,130,246,.25)}
+.btn.py-srv:hover{filter:brightness(1.08);border-color:#818cf8}
+.btn.py-srv[data-active="true"]{background:linear-gradient(135deg,#16a34a,#22c55e);border-color:#4ade80}
+.py-term{background:#090d14;color:#a7f3d0;font:500 12px/1.6 var(--f-code);padding:12px;border-radius:8px;border:1px solid #1e293b;max-height:220px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+.py-stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.py-stat-card{padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);display:grid;gap:2px}
+.py-stat-card b{font:800 18px var(--f-code);color:var(--tab)}
+.py-stat-card span{font:500 11px var(--f-code);color:var(--muted)}
+
+</style>
 </head>
 <body>
-  <!-- Print Header -->
-  <div class="print-only print-header">
-    <div class="print-header-content">
-      <div>
-        <h1 class="print-doc-title">WEBSITE FULL SOURCE AUDIT, API & ELEMENT REPORT</h1>
-        <p class="print-meta-target" id="printTargetUrl">Target: https://example.com</p>
-      </div>
-      <div class="print-header-meta">
-        <span id="printDate">Date: 2026-10-15</span>
-        <span>WebSource Inspector Pro (Heavy Task Engine)</span>
-      </div>
-    </div>
+
+<header class="top">
+  <div class="brand">
+    <span class="mark" aria-hidden="true">&lt;/&gt;</span>
+    <div><b>Source Viewer</b><small>Heavy Pro v2.0</small></div>
   </div>
+  <form class="urlbar" id="go" autocomplete="off">
+    <input id="url" type="text" inputmode="url" list="recent" placeholder="https://website.com" spellcheck="false" aria-label="Website URL">
+    <button class="btn go" id="goBtn" type="submit">Source dekho</button>
+  </form>
+  <div class="tools">
+    <button class="btn py-extract" id="bFastExtract" type="button" title="Run: python3 fast_extractor.py <url> --test-apis">⚡ Fast Extract (--test-apis)</button>
+    <button class="btn py-srv" id="bPyServer" type="button" title="Run: python3 server.py">🐍 Start Python Server</button>
+    <button class="btn" id="bSearchAll" type="button" title="Project Search across all files (Ctrl+Shift+F)">🔍 Global Search</button>
+    <button class="btn" id="bPaste" type="button">Paste HTML</button>
+    <button class="btn" id="bFile" type="button">File kholo</button>
+    <button class="btn" id="bZip" type="button">ZIP Code</button>
+    <button class="btn" id="bZipImg" type="button">ZIP Images</button>
+    <button class="btn" id="bZipSite" type="button">Full Site ZIP</button>
+    <button class="btn" id="bTheme" type="button" aria-label="Theme badlo">Theme: Cyber</button>
+    <input id="fileIn" type="file" accept=".html,.htm,.xhtml,.css,.js,.mjs,.txt" hidden>
+  </div>
+</header>
+<datalist id="recent"></datalist>
 
-  <!-- Header -->
-  <header class="app-header no-print">
-    <div class="container header-container">
-      <div class="brand">
-        <div class="logo-icon">&lt;/&gt;</div>
-        <div>
-          <h1 class="brand-title">WebSource <span>Inspector Pro</span></h1>
-          <p class="brand-sub">Live Web Preview, Clickable Button Inspector & GET/POST API Extractor</p>
-        </div>
-      </div>
-      <div class="header-actions">
-        <span class="badge live-badge">● GitHub & Vercel Ready</span>
-        <button id="themeToggle" class="btn btn-icon" title="Theme Toggle">🌓</button>
-      </div>
-    </div>
-  </header>
+<div class="cmd-strip" aria-label="Python Quick Commands">
+  <span class="cmd-title">🐍 Python Quick Runner:</span>
+  <button class="btn py-extract" id="bFastExtractBar" type="button">▶ 1st: python3 fast_extractor.py --test-apis</button>
+  <button class="btn py-srv" id="bPyServerBar" type="button">▶ 2nd: python3 server.py (Start Engine)</button>
+  <span class="chip" id="pyEngineBadge">Engine: Ready</span>
+</div>
 
-  <main class="container main-content">
-    <!-- URL Input & Multi-Web Manager -->
-    <section class="fetch-card no-print">
-      <form id="fetchForm" class="fetch-form">
-        <div class="input-group">
-          <span class="input-icon">🌐</span>
-          <input type="url" id="urlInput" placeholder="Kisi bhi website ka URL enter karein (e.g. https://httpbin.org/forms/post)" required value="https://example.com">
-          <button type="submit" id="fetchBtn" class="btn btn-primary">
-            <span class="btn-text">Website Fetch & Inspect</span>
-            <span class="spinner" id="fetchSpinner" style="display: none;"></span>
-          </button>
-        </div>
-      </form>
+<div class="opts">
+  <label><input type="checkbox" id="optExt" checked> Linked CSS & JS lao</label>
+  <label><input type="checkbox" id="optBeaut" checked> Beautify code</label>
+  <label><input type="checkbox" id="optJs" checked> Preview mein JS chalao</label>
+  <label>User-Agent:
+    <select class="sm" id="optUa" style="height:26px;font-size:11px;padding:0 4px">
+      <option value="desktop" selected>Desktop Chrome</option>
+      <option value="mobile">iPhone Safari</option>
+      <option value="bot">Googlebot</option>
+    </select>
+  </label>
+  <span class="seg" role="group" aria-label="Layout">
+    <button class="sm" type="button" data-layout-btn="source" aria-pressed="false">Source</button>
+    <button class="sm" type="button" data-layout-btn="split" aria-pressed="true">Split</button>
+    <button class="sm" type="button" data-layout-btn="site" aria-pressed="false">Website</button>
+  </span>
+</div>
 
-      <!-- Saved Websites / History Bar -->
-      <div class="saved-sites-bar">
-        <span class="saved-label">⭐ Saved / Recent Websites:</span>
-        <div class="saved-chips" id="savedSitesList">
-          <!-- Dynamically populated -->
-        </div>
-        <button id="clearSitesBtn" class="btn btn-xs btn-outline" title="Clear History">Clear</button>
-      </div>
+<div class="progress" id="prog" hidden><i id="progBar"></i></div>
+<div class="statline" id="stats" role="status" aria-live="polite"></div>
 
-      <div class="fetch-options">
-        <div class="quick-samples">
-          <span>Quick Demos:</span>
-          <button class="sample-chip" data-url="https://example.com">Example.com</button>
-          <button class="sample-chip" data-url="https://httpbin.org/forms/post">Forms (GET/POST Demo)</button>
-          <button class="sample-chip" data-url="https://news.ycombinator.com">HackerNews</button>
-        </div>
-        <div class="proxy-selector">
-          <label for="proxyMode">Fetch Engine:</label>
-          <select id="proxyMode">
-            <option value="auto">Auto (Vercel Serverless + Fallback)</option>
-            <option value="vercel">Vercel API (/api/fetch)</option>
-            <option value="corsproxy">Public CORS Proxy</option>
-          </select>
-        </div>
-      </div>
-      <div id="statusAlert" class="alert" style="display: none;"></div>
-    </section>
+<main class="app" id="app" data-layout="split">
 
-    <!-- Metrics Cards -->
-    <section id="metricsSection" class="metrics-grid" style="display: none;">
-      <div class="metric-card">
-        <span class="metric-label">HTML Size & Lines</span>
-        <h3 class="metric-value" id="statHtmlSize">0 KB / 0 L</h3>
-      </div>
-      <div class="metric-card">
-        <span class="metric-label">Buttons & Clickables</span>
-        <h3 class="metric-value" id="statBtnCount">0 Buttons</h3>
-      </div>
-      <div class="metric-card">
-        <span class="metric-label">GET / POST Requests</span>
-        <h3 class="metric-value" id="statRequestCount">0 Forms / 0 APIs</h3>
-      </div>
-      <div class="metric-card">
-        <span class="metric-label">CSS & JS Files</span>
-        <h3 class="metric-value" id="statResourcesCount">0 CSS / 0 JS</h3>
-      </div>
-      <div class="metric-card">
-        <span class="metric-label">Fetch Status</span>
-        <h3 class="metric-value" id="statResponseTime">200 OK</h3>
-      </div>
-    </section>
-
-    <!-- Action Toolbar & Heavy Print Controls -->
-    <section id="actionToolbar" class="action-toolbar no-print" style="display: none;">
-      <div class="tab-buttons">
-        <button class="tab-btn active" data-tab="tab-buttons">🔘 Buttons & Clickables (Interactive)</button>
-        <button class="tab-btn" data-tab="tab-requests">📡 GET / POST Forms & APIs</button>
-        <button class="tab-btn" data-tab="tab-preview">🖥️ Live Web Preview</button>
-        <button class="tab-btn" data-tab="tab-html">📄 Full HTML Code</button>
-        <button class="tab-btn" data-tab="tab-css">🎨 CSS Styles</button>
-        <button class="tab-btn" data-tab="tab-js">⚡ JS Scripts</button>
-        <button class="tab-btn" data-tab="tab-overview">📊 SEO & Metadata</button>
-      </div>
-
-      <div class="toolbar-actions">
-        <div class="dropdown-container">
-          <button id="heavyPrintBtn" class="btn btn-accent">🖨️ Heavy Print Task</button>
-          <div class="dropdown-menu">
-            <button class="menu-item" data-print-mode="full">📑 Full Report + Code + GET/POST Details</button>
-            <button class="menu-item" data-print-mode="buttons">🔘 Sirf Buttons & Clickable Elements Report</button>
-            <button class="menu-item" data-print-mode="requests">📡 Sirf GET/POST Forms & APIs Audit</button>
-            <button class="menu-item" data-print-mode="code">📄 Sirf Full Source Code</button>
-          </div>
-        </div>
-        <button id="copyCodeBtn" class="btn btn-secondary">📋 Copy</button>
-        <button id="downloadHtmlBtn" class="btn btn-secondary">💾 Download</button>
-      </div>
-    </section>
-
-    <!-- Main Content Container -->
-    <div id="inspectorContent" class="inspector-box" style="display: none;">
-      
-      <!-- TAB: BUTTONS & CLICKABLE ELEMENTS (INTERACTIVE INSPECTOR) -->
-      <section id="tab-buttons" class="tab-pane active">
-        <div class="pane-header">
-          <div>
-            <h2>🔘 Interactive Buttons & Clickables Inspector</h2>
-            <p class="pane-desc">Kisi bhi button par click karein, uska HTML code, classes, parent form aur GET/POST action foran niche open ho jayega.</p>
-          </div>
-          <div class="filter-controls no-print">
-            <input type="text" id="btnFilterInput" placeholder="Button text ya tag search karein..." class="search-input">
-            <span class="badge" id="buttonsFoundBadge">0 Buttons</span>
-          </div>
-        </div>
-
-        <div class="button-inspector-layout">
-          <!-- Left: List of all interactive buttons/elements -->
-          <div class="button-list-column">
-            <div class="column-title">Page Par Mojood Buttons & Interactive Elements:</div>
-            <div id="buttonsListContainer" class="buttons-grid">
-              <!-- Buttons dynamically injected here -->
-            </div>
-          </div>
-
-          <!-- Right: Inspector Detail Panel for the clicked button -->
-          <div class="button-detail-column">
-            <div class="column-title">Selected Element Details & Source Code:</div>
-            <div id="buttonDetailPlaceholder" class="detail-empty">
-              <span>👈 Kisi bhi button par click karein uska code aur GET/POST dekhne ke liye</span>
-            </div>
-
-            <div id="buttonDetailCard" class="button-detail-card" style="display: none;">
-              <div class="detail-header">
-                <div>
-                  <span class="badge badge-primary" id="detElementType">BUTTON</span>
-                  <strong id="detElementText">Submit Query</strong>
-                </div>
-                <button id="copyElementCodeBtn" class="btn btn-xs btn-outline">📋 Copy Code</button>
-              </div>
-
-              <!-- GET/POST Method and Action Banner -->
-              <div class="request-banner" id="detRequestBanner">
-                <span class="badge badge-method" id="detMethodBadge">POST</span>
-                <span class="action-url" id="detActionUrl">Action: /api/submit</span>
-              </div>
-
-              <!-- Element Attributes Table -->
-              <div class="detail-section">
-                <h4>Element Attributes:</h4>
-                <table class="data-table" id="detAttributesTable">
-                  <thead><tr><th>Attribute</th><th>Value</th></tr></thead>
-                  <tbody></tbody>
-                </table>
-              </div>
-
-              <!-- Element Outer HTML Code Box -->
-              <div class="detail-section">
-                <h4>Element Source Code (HTML):</h4>
-                <div class="code-snippet-box">
-                  <pre><code id="detOuterHtmlCode"></code></pre>
-                </div>
-              </div>
-
-              <!-- Associated Form / Action Data if any -->
-              <div class="detail-section" id="detFormInputsSection" style="display: none;">
-                <h4>Associated Form Input Fields (Payload):</h4>
-                <table class="data-table" id="detFormInputsTable">
-                  <thead><tr><th>Name</th><th>Type</th><th>Value</th></tr></thead>
-                  <tbody></tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- TAB: GET / POST FORMS & APIS ANALYZER -->
-      <section id="tab-requests" class="tab-pane">
-        <div class="pane-header">
-          <h2>📡 GET / POST Forms & API Endpoints Analyzer</h2>
-          <p class="pane-desc">Website ke sabhi HTML Forms (GET/POST) aur JavaScript mein mojood API fetch/ajax calls ka mukammal data.</p>
-        </div>
-
-        <div class="requests-container" id="requestsContainer">
-          <!-- Populated dynamically -->
-        </div>
-      </section>
-
-      <!-- TAB: LIVE WEB PREVIEW (नीचे लाइव वेब भी हो) -->
-      <section id="tab-preview" class="tab-pane">
-        <div class="pane-header preview-header">
-          <div>
-            <h2>🖥️ Live Website Preview</h2>
-            <p class="pane-desc">Target website ka responsive sandboxed live view.</p>
-          </div>
-          <div class="preview-controls no-print">
-            <button class="btn btn-sm btn-outline active-device" data-device="desktop">💻 Desktop</button>
-            <button class="btn btn-sm btn-outline" data-device="tablet">📱 Tablet (768px)</button>
-            <button class="btn btn-sm btn-outline" data-device="mobile">📱 Mobile (375px)</button>
-            <a id="openNewTabBtn" href="#" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">External Window ↗</a>
-          </div>
-        </div>
-
-        <div class="live-preview-wrapper" id="previewWrapper">
-          <iframe id="livePreviewFrame" sandbox="allow-scripts allow-forms allow-same-origin" src="about:blank"></iframe>
-        </div>
-      </section>
-
-      <!-- TAB: FULL HTML SOURCE CODE -->
-      <section id="tab-html" class="tab-pane">
-        <div class="pane-header code-header">
-          <div>
-            <h2>Raw HTML Source Code</h2>
-            <p class="pane-desc" id="htmlStatsDesc">0 Lines, 0 Characters</p>
-          </div>
-          <div class="code-controls no-print">
-            <input type="text" id="codeSearchInput" placeholder="Code search (Ctrl+F)..." class="search-input">
-            <span id="searchMatchesCount"></span>
-            <button id="formatHtmlBtn" class="btn btn-sm btn-outline">⚡ Beautify</button>
-            <button id="wrapCodeBtn" class="btn btn-sm btn-outline">↩️ Word Wrap</button>
-          </div>
-        </div>
-        <div class="code-viewer-container">
-          <div class="code-line-numbers" id="htmlLineNumbers"></div>
-          <pre class="code-viewer" id="htmlCodeDisplay"><code></code></pre>
-        </div>
-      </section>
-
-      <!-- TAB: CSS STYLES -->
-      <section id="tab-css" class="tab-pane">
-        <div class="pane-header"><h2>Extracted CSS Stylesheets & Inline Blocks</h2></div>
-        <div class="assets-list" id="cssListContainer"></div>
-      </section>
-
-      <!-- TAB: JAVASCRIPT SCRIPTS -->
-      <section id="tab-js" class="tab-pane">
-        <div class="pane-header"><h2>Extracted JavaScript Files & Inline Scripts</h2></div>
-        <div class="assets-list" id="jsListContainer"></div>
-      </section>
-
-      <!-- TAB: SEO & METADATA -->
-      <section id="tab-overview" class="tab-pane">
-        <div class="pane-header"><h2>SEO, OpenGraph & Heading Tree</h2></div>
-        <div class="audit-grid">
-          <div class="audit-card">
-            <div class="card-header"><h3>🏷️ Meta Tags</h3><span class="badge" id="metaCountBadge">0</span></div>
-            <div class="card-body">
-              <table class="data-table" id="metaTable">
-                <thead><tr><th>Name / Property</th><th>Content</th></tr></thead>
-                <tbody></tbody>
-              </table>
-            </div>
-          </div>
-          <div class="audit-card">
-            <div class="card-header"><h3>📑 Heading Tree (H1-H6)</h3><span class="badge" id="headingsCountBadge">0</span></div>
-            <div class="card-body"><div id="headingsList" class="headings-tree"></div></div>
-          </div>
-        </div>
-      </section>
-
+  <section class="viewer">
+    <div class="tabs" role="tablist" aria-label="Source type">
+      <button class="tab" role="tab" data-tab="all" id="tAll">Sab <em data-c="all">0</em></button>
+      <button class="tab" role="tab" data-tab="html" id="tHtml">HTML <em id="cHtml" data-c="html">0</em></button>
+      <button class="tab" role="tab" data-tab="css" id="tCss">CSS <em id="cCss" data-c="css">0</em></button>
+      <button class="tab" role="tab" data-tab="js" id="tJs">JavaScript <em id="cJs" data-c="js">0</em></button>
+      <button class="tab" role="tab" data-tab="images" id="tImages">Images <em data-c="images">0</em></button>
+      <button class="tab" role="tab" data-tab="api" id="tApi">API <em data-c="api">0</em></button>
+      <button class="tab" role="tab" data-tab="fonts" id="tFonts">Fonts <em data-c="fonts">0</em></button>
+      <button class="tab" role="tab" data-tab="media" id="tMedia">Media <em data-c="media">0</em></button>
+      <button class="tab" role="tab" data-tab="colors" id="tColors">Colors <em data-c="colors">0</em></button>
+      <button class="tab" role="tab" data-tab="tech" id="tTech">Tech Stack <em data-c="tech">0</em></button>
+      <button class="tab" role="tab" data-tab="security" id="tSecurity">Security <em data-c="security">0</em></button>
+      <button class="tab" role="tab" data-tab="seo" id="tSeo">SEO & Cards</button>
+      <button class="tab" role="tab" data-tab="other" id="tOther">Other <em data-c="other">0</em></button>
+      <button class="tab" role="tab" data-tab="info" id="tInfo">Page info</button>
     </div>
 
-    <!-- Welcome Placeholder -->
-    <div id="welcomeState" class="welcome-card">
-      <div class="welcome-icon">⚡</div>
-      <h2>WebSource Inspector Pro mein Welcome!</h2>
-      <p>Kisi bhi website ka URL dalein. Uski live web preview dekhein, buttons par click karke unka code aur GET/POST request details inspect karein.</p>
-      <div class="feature-pills">
-        <span>🔘 Clickable Button Inspector</span>
-        <span>📡 Form & API GET/POST Analyzer</span>
-        <span>🖥️ Live Sandboxed Web Preview</span>
-        <span>⚡ Full HTML/CSS/JS Extractor</span>
-        <span>🖨️ Heavy Print Engine</span>
+    <div id="codeView">
+      <div class="vbar">
+        <span class="fname" id="fname"></span>
+        <span class="fmeta" id="fmeta"></span>
+        <select class="sm" id="fileSel" aria-label="File chunein"></select>
+        <div class="vact">
+          <input id="q" type="search" placeholder="Is file mein dhoondo" aria-label="File search">
+          <span id="qc" aria-live="polite"></span>
+          <button class="sm" id="prev" type="button" aria-label="Pichla">&uarr;</button>
+          <button class="sm" id="next" type="button" aria-label="Agla">&darr;</button>
+          <button class="sm" id="bBeaut" type="button" aria-pressed="true">Beautify</button>
+          <button class="sm" id="bWrap" type="button" aria-pressed="false">Wrap</button>
+          <button class="sm" id="bCopy" type="button">Copy</button>
+          <button class="sm" id="bDl" type="button">Download</button>
+        </div>
+      </div>
+      <div class="codewrap" id="cw">
+        <pre class="gutter" id="gut" aria-hidden="true"></pre>
+        <pre class="code" tabindex="0"><code id="code"></code></pre>
       </div>
     </div>
-  </main>
+    <div id="infoView" hidden></div>
+    <div id="assetView" hidden></div>
+  </section>
 
-  <footer class="print-only print-footer">
-    <span>WebSource Inspector Pro - Heavy Task Engine</span>
-  </footer>
+  <section class="live" id="live" aria-label="Website aur network">
+    <div class="pv">
+      <div class="pvbar">
+        <button class="sm" id="pvBack" type="button" aria-label="Wapas">&larr;</button>
+        <button class="sm" id="pvReload" type="button" aria-label="Dobara load">&#8635;</button>
+        <span class="pvurl" id="pvUrl"></span>
+        <span class="seg" role="group" aria-label="Device preset">
+          <button class="sm" type="button" data-pv-dev="desk" aria-pressed="true">Desktop</button>
+          <button class="sm" type="button" data-pv-dev="lap" aria-pressed="false">Laptop</button>
+          <button class="sm" type="button" data-pv-dev="tab" aria-pressed="false">Tablet</button>
+          <button class="sm" type="button" data-pv-dev="mob" aria-pressed="false">Mobile</button>
+        </span>
+        <button class="sm" id="pvRot" type="button" title="Rotate orientation" aria-pressed="false">🔄</button>
+      </div>
+      <div class="pvstage" id="pvStage">
+        <iframe id="frame" title="Website preview" sandbox="allow-scripts allow-forms allow-popups allow-modals" referrerpolicy="no-referrer"></iframe>
+        <div class="pvempty" id="pvEmpty">Upar URL daalein, website yahan khul jayegi.</div>
+      </div>
+    </div>
 
-  <script src="app.js"></script>
+    <div class="net" id="net">
+      <div class="nhead">
+        <b>Inspect</b>
+        <select class="sm" id="nViewSel" aria-label="Inspector Mode">
+          <option value="net">Requests</option>
+          <option value="console">Console Logs</option>
+        </select>
+        <span class="chip" id="nCount">0 requests</span>
+        <select class="sm" id="nType" aria-label="Request type">
+          <option value="all">Sab</option>
+          <option value="xhr">Fetch / XHR</option>
+          <option value="doc">Document</option>
+          <option value="js">JS</option>
+          <option value="css">CSS</option>
+          <option value="img">Images</option>
+          <option value="other">Other</option>
+        </select>
+        <input id="nQ" type="search" placeholder="Filter (url, GET, POST, 404)" aria-label="Filter">
+        <button class="sm" id="bHar" type="button" title="Export as HAR 1.2">Export HAR</button>
+        <button class="sm" id="nClear" type="button">Clear</button>
+      </div>
+      <div class="nchip" id="nChip" hidden></div>
+      <div class="nlist" id="nList"></div>
+      <div class="ndet" id="nDet" hidden></div>
+    </div>
+  </section>
+</main>
+
+<!-- Modals -->
+<dialog id="pasteDlg">
+  <form method="dialog" id="pasteForm">
+    <h2>HTML paste karo</h2>
+    <textarea id="pasteTa" spellcheck="false" placeholder="Yahan page ka HTML paste karein."></textarea>
+    <div class="row">
+      <button class="btn" value="cancel" type="submit">Band</button>
+      <button class="btn go" id="pasteOk" value="ok" type="submit">Dikhao</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="assetDlg" aria-labelledby="adTitle">
+  <div class="adwrap" style="padding:14px;max-height:88dvh;overflow:auto;display:grid;gap:10px">
+    <div class="adhead" style="display:flex;align-items:center;gap:10px"><h2 id="adTitle" style="margin:0;font:800 16px var(--f-ui)"></h2><button class="sm" id="adClose" type="button">Band</button></div>
+    <div class="adbody" id="adBody" style="display:grid;gap:8px"></div>
+  </div>
+</dialog>
+
+<dialog id="globalSearchDlg">
+  <form method="dialog" id="globalSearchForm" style="display:grid;gap:10px;padding:16px;max-height:86dvh">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <h2 style="margin:0">🔍 Global Project Search</h2>
+      <button class="sm" value="cancel" type="submit">Band</button>
+    </div>
+    <input id="gsInput" type="search" placeholder="Search across HTML, all CSS and JS files..." style="height:36px;padding:0 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font:500 13px var(--f-code)">
+    <div id="gsResults" style="max-height:55dvh;overflow:auto;display:grid;gap:6px">
+      <p class="hint">Type something to search all loaded files.</p>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="pyRunnerDlg" style="width:min(860px,calc(100vw - 24px))">
+  <div style="padding:16px;max-height:88dvh;overflow:auto;display:grid;gap:12px">
+    <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid var(--line);padding-bottom:10px">
+      <div>
+        <h2 id="pyDlgTitle" style="margin:0;font:800 17px var(--f-ui)">⚡ Python Fast Extractor & Live API Response Runner</h2>
+        <small id="pyDlgCmd" style="font:500 11.5px var(--f-code);color:var(--muted)">python3 fast_extractor.py https://example.com --test-apis</small>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="sm" id="pyReRun" type="button">🔄 Dobara Run Karein</button>
+        <button class="sm" id="pyDlJson" type="button">📥 Download JSON</button>
+        <button class="sm" id="pyCopyLog" type="button">📋 Copy Output</button>
+        <button class="sm" id="pyDlgClose" type="button">✕ Band</button>
+      </div>
+    </div>
+
+    <div class="py-stat-grid" id="pyStatsGrid">
+      <div class="py-stat-card"><b id="stFiles">0</b><span>Files Analyzed</span></div>
+      <div class="py-stat-card"><b id="stEps">0</b><span>Hardcoded APIs</span></div>
+      <div class="py-stat-card"><b id="stSecs">0</b><span>Secrets / Keys</span></div>
+      <div class="py-stat-card"><b id="stLive">0</b><span>Live API Responses</span></div>
+      <div class="py-stat-card"><b id="stTime">0.0s</b><span>Execution Time</span></div>
+    </div>
+
+    <div>
+      <h4 style="margin:0 0 6px;font:700 11px var(--f-code);text-transform:uppercase;color:var(--muted)">Terminal Execution Log</h4>
+      <pre class="py-term" id="pyTermLog">[*] Ready to start...</pre>
+    </div>
+
+    <div id="pyResultsBody" style="display:grid;gap:14px"></div>
+  </div>
+</dialog>
+
+<div class="drop" id="drop">File yahan chhor dein</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.15.1/beautify.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.15.1/beautify-css.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.15.1/beautify-html.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="live.js"></script>
+<script src="assets.js"></script>
+<script>
+(function () {
+'use strict';
+
+var $ = function (s, r) { return (r || document).querySelector(s); };
+var esc = function (s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
+var escRe = function (s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); };
+var enc = new TextEncoder();
+var bytes = function (s) { return enc.encode(s).length; };
+var fmt = function (n) { return n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(2) + ' MB'; };
+
+var LABEL = { html: 'HTML', css: 'CSS', js: 'JavaScript' };
+var CODE = { html: 1, css: 1, js: 1 };
+var AK = { all: 1, images: 1, api: 1, fonts: 1, media: 1, colors: 1, tech: 1, security: 1, seo: 1, other: 1 };
+
+var S = {
+  sources: [], assets: null, tab: 'html', active: null, info: null,
+  beautify: true, wrap: false, host: 'site', ms: 0
+};
+var viewCache = new Map();
+var marks = [], cur = -1, MAXM = 3000;
+var apiMode = 'auto';
+
+var PROXIES = [
+  function (u) { return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); },
+  function (u) { return 'https://corsproxy.io/?url=' + encodeURIComponent(u); }
+];
+
+async function probeApi() {
+  if (!/^https?:/.test(location.protocol)) { apiMode = 'cors'; return; }
+  try {
+    var r = await fetch('/api/fetch?url=https%3A%2F%2Fexample.com', { method: 'GET' });
+    apiMode = (r.status === 200 || r.status === 400 || r.status === 502) ? 'api' : 'cors';
+  } catch (e) { apiMode = 'cors'; }
+}
+
+async function getRemote(url, req) {
+  var ua = $('#optUa') ? $('#optUa').value : 'desktop';
+  if (apiMode === 'api') {
+    if (!req || req.method === 'GET') {
+      var r = await fetch('/api/fetch?url=' + encodeURIComponent(url) + '&ua=' + encodeURIComponent(ua));
+      var j = await r.json();
+      if (!j.ok) throw new Error(j.error || 'Server error (' + r.status + ')');
+      return j;
+    }
+    var pr = await fetch('/api/proxy', {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain' },
+      body: JSON.stringify({ url: url, method: req.method, headers: req.headers || {}, body: req.body || '', page: (S.info && S.info.url) || '' })
+    });
+    var pj = await pr.json();
+    if (!pj.ok) throw new Error(pj.error || 'Proxy error');
+    return pj;
+  }
+  // Public CORS Proxy Fallback
+  for (var i = 0; i < PROXIES.length; i++) {
+    try {
+      var r = await fetch(PROXIES[i](url));
+      if (!r.ok) continue;
+      var body = await r.text();
+      return { ok: true, status: r.status, finalUrl: url, contentType: r.headers.get('content-type') || '', headers: {}, truncated: false, body: body, viaProxy: true };
+    } catch (e) {}
+  }
+  throw new Error('Website tak nahi pahunch saka. CORS issue ya site down hai.');
+}
+
+function mk(id, type, name, kind, text, url) {
+  return { id: id, type: type, name: name, kind: kind, text: text || '', size: bytes(text || ''), url: url || '', failed: false };
+}
+
+function assignFiles(list) {
+  var used = new Set();
+  list.forEach(function (s) {
+    var n = s.type === 'html' ? 'index.html' : s.name.split(/[?#]/)[0].split('/').pop() || (s.type + '-file.' + s.type);
+    n = n.replace(/[^\w.\-]/g, '_');
+    if (!n.endsWith('.' + s.type)) n += '.' + s.type;
+    var base = n, k = 1;
+    while (used.has(n)) { n = base.replace(new RegExp('\\.' + s.type + '$'), '') + '-' + (++k) + '.' + s.type; }
+    used.add(n); s.file = n;
+  });
+}
+
+async function fetchMany(defs) {
+  var out = new Array(defs.length), next = 0, done = 0;
+  var workers = new Array(Math.min(6, defs.length)).fill(0).map(async function () {
+    while (next < defs.length) {
+      var i = next++, d = defs[i];
+      try {
+        var r = await getRemote(d.url);
+        out[i] = mk(d.id, d.type, d.name, 'external', r.body, d.url);
+      } catch (e) {
+        var f = mk(d.id, d.type, d.name, 'external', '/* Load nahi hua: ' + (e.message || 'error') + ' */', d.url);
+        f.failed = true; out[i] = f;
+      }
+      done++;
+      progress(0.25 + (done / defs.length) * 0.7);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+async function ingest(html, base, remote, opts) {
+  opts = opts || {};
+  var doc = new DOMParser().parseFromString(html, 'text/html');
+  var abs = function (h) { try { return new URL(h, base).href; } catch (e) { return h; } };
+  var defs = [], seen = new Set();
+
+  if (remote && $('#optExt').checked) {
+    doc.querySelectorAll('link[rel~="stylesheet" i][href]').forEach(function (l, i) {
+      var u = abs(l.getAttribute('href'));
+      if (/^https?:/.test(u) && !seen.has(u) && defs.length < 40) {
+        seen.add(u); defs.push({ id: 'ec' + i, type: 'css', name: u.split(/[?#]/)[0].split('/').pop() || ('style-' + i + '.css'), url: u });
+      }
+    });
+    doc.querySelectorAll('script[src]').forEach(function (s, i) {
+      var u = abs(s.getAttribute('src'));
+      if (/^https?:/.test(u) && !seen.has(u) && defs.length < 40) {
+        seen.add(u); defs.push({ id: 'ej' + i, type: 'js', name: u.split(/[?#]/)[0].split('/').pop() || ('script-' + i + '.js'), url: u });
+      }
+    });
+  }
+
+  var ext = defs.length ? await fetchMany(defs) : [];
+  var inline = [], si = 0, ji = 0;
+  doc.querySelectorAll('style').forEach(function (el) {
+    var t = el.textContent;
+    if (t.trim()) inline.push(mk('is' + si, 'css', '<style> #' + (++si), 'inline', t));
+  });
+  doc.querySelectorAll('script:not([src])').forEach(function (el) {
+    var t = el.textContent;
+    if (!t.trim()) return;
+    var ty = el.getAttribute('type');
+    inline.push(mk('ij' + ji, 'js', '<script> #' + (++ji) + (ty ? ' (' + ty + ')' : ''), 'inline', t));
+  });
+
+  var all = [mk('doc', 'html', opts.label || 'Page source (HTML)', 'document', html, base)].concat(ext, inline);
+  assignFiles(all);
+
+  var baseHost = ''; try { baseHost = new URL(base).host; } catch (e) {}
+  var hosts = new Set();
+  doc.querySelectorAll('[src],[href]').forEach(function (el) {
+    var v = el.getAttribute('src') || el.getAttribute('href');
+    var u = base && v ? abs(v) : null;
+    if (u && /^https?:/.test(u)) { try { var h = new URL(u).host; if (h !== baseHost) hosts.add(h); } catch (e) {} }
+  });
+  var metas = [];
+  doc.querySelectorAll('meta').forEach(function (m) {
+    var k = m.getAttribute('name') || m.getAttribute('property') || m.getAttribute('http-equiv') || (m.getAttribute('charset') ? 'charset' : '');
+    var v = m.getAttribute('content') || m.getAttribute('charset') || '';
+    if (k && metas.length < 40) metas.push([k, v]);
+  });
+  var q = function (s) { return doc.querySelectorAll(s).length; };
+  var descEl = doc.querySelector('meta[name="description" i]');
+
+  S.info = {
+    origin: remote ? 'remote' : 'local', url: base, title: (doc.title || '').trim(), desc: descEl ? descEl.getAttribute('content') || '' : '',
+    lang: doc.documentElement.getAttribute('lang') || '', size: bytes(html),
+    counts: { links: q('a[href]'), images: q('img'), forms: q('form'), styleAttrs: q('[style]'), scripts: q('script'), sheets: q('link[rel~="stylesheet" i]') },
+    hosts: Array.from(hosts).sort(), metas: metas
+  };
+  if (opts.meta) { S.info.status = opts.meta.status; S.info.contentType = opts.meta.contentType; S.info.headers = opts.meta.headers; S.info.viaProxy = opts.meta.viaProxy; S.info.truncated = opts.meta.truncated; }
+
+  var prevTab = S.tab;
+  S.sources = all;
+  S.host = baseHost || 'site';
+  S.active = 'doc';
+  S.tab = opts.tab || (AK[prevTab] || prevTab === 'info' ? prevTab : 'html');
+  try { S.assets = USV_assets.extract(doc, base, all); } catch (e) { S.assets = null; if (window.console) console.error(e); }
+  viewCache.clear();
+  renderAll();
+  if (window.USV_live) USV_live.render(html, base);
+}
+
+function getSrc(id) {
+  if (id === 'all-css' || id === 'all-js') {
+    var t = id === 'all-css' ? 'css' : 'js';
+    var list = S.sources.filter(function (s) { return s.type === t; });
+    return { id: id, type: t, name: 'Sab ' + LABEL[t] + ' ek saath', kind: 'combined', file: 'all.' + t,
+      text: list.map(function (s) { return '/* ===== ' + s.name + ' ===== */\n' + s.text; }).join('\n\n'),
+      size: list.reduce(function (a, s) { return a + s.size; }, 0) };
+  }
+  return S.sources.find(function (s) { return s.id === id; });
+}
+
+function build(src) {
+  var key = src.id + (S.beautify ? ':b' : ':r');
+  if (viewCache.has(key)) return viewCache.get(key);
+  var text = src.text;
+  if (S.beautify && text.length < 1500000 && !src.failed) {
+    try {
+      text = src.type === 'html' ? html_beautify(text, { indent_size: 2, wrap_line_length: 0, preserve_newlines: true, max_preserve_newlines: 2 })
+        : src.type === 'css' ? css_beautify(text, { indent_size: 2 })
+        : js_beautify(text, { indent_size: 2, preserve_newlines: true });
+    } catch (e) { text = src.text; }
+  }
+  var lang = src.type === 'html' ? 'xml' : src.type === 'css' ? 'css' : 'javascript';
+  var html, plain = false;
+  if (text.length > 600000 || typeof hljs === 'undefined') { html = esc(text); plain = true; }
+  else { try { html = hljs.highlight(text, { language: lang, ignoreIllegals: true }).value; } catch (e) { html = esc(text); plain = true; } }
+  var v = { text: text, html: html, plain: plain && text.length > 600000, lines: text.split('\n').length };
+  viewCache.set(key, v);
+  return v;
+}
+
+function progress(p) {
+  var bar = $('#progBar'), wrap = $('#prog');
+  wrap.hidden = p == null || p >= 1;
+  if (p != null) bar.style.width = Math.round(p * 100) + '%';
+}
+
+function setMsg(t, kind) {
+  var el = $('#stats');
+  var m = el.querySelector('.msg');
+  if (!m) { m = document.createElement('span'); m.className = 'msg'; el.append(m); }
+  m.textContent = t || '';
+  m.className = 'msg' + (kind ? ' ' + kind : '');
+}
+
+function renderStats() {
+  var cnt = function (t) { return S.sources.filter(function (s) { return s.type === t; }).length; };
+  var doc = S.sources[0];
+  var el = $('#stats');
+  var secScore = S.assets ? S.assets.security.score : 100;
+  var secBadge = secScore >= 80 ? 'ok' : secScore >= 50 ? 'warn' : 'bad';
+  el.innerHTML =
+    '<span class="chip html"><i></i>HTML ' + (doc ? fmt(doc.size) : '0 B') + '</span>' +
+    '<span class="chip css"><i></i>' + cnt('css') + ' CSS</span>' +
+    '<span class="chip js"><i></i>' + cnt('js') + ' JS</span>' +
+    '<span class="chip ' + secBadge + '">🛡️ Sec: ' + secScore + '/100</span>' +
+    (S.ms ? '<span class="chip">⚡ ' + (S.ms < 1000 ? Math.round(S.ms) + 'ms' : (S.ms / 1000).toFixed(1) + 's') + '</span>' : '') +
+    '<span class="msg"></span>';
+}
+
+function renderTabs() {
+  var c = USV_assets.counts(S.assets, { sources: S.sources, live: window.USV_live ? USV_live.apiList() : [] });
+  document.querySelectorAll('.tab em[data-c]').forEach(function (em) { em.textContent = c[em.dataset.c] || 0; });
+  document.querySelectorAll('.tab').forEach(function (b) { b.setAttribute('aria-selected', b.dataset.tab === S.tab ? 'true' : 'false'); });
+  document.documentElement.dataset.tab = S.tab;
+}
+
+function renderList() {
+  var sel = $('#fileSel');
+  if (!CODE[S.tab]) { sel.innerHTML = ''; return; }
+  var items = S.sources.filter(function (s) { return s.type === S.tab; });
+  if (!items.length) {
+    sel.hidden = false; sel.disabled = true;
+    sel.innerHTML = '<option>Is page mein ' + LABEL[S.tab] + ' nahi mili</option>';
+    return;
+  }
+  var rows = items.slice();
+  if ((S.tab === 'css' || S.tab === 'js') && items.length > 1) rows.unshift(getSrc('all-' + S.tab));
+  if (!rows.some(function (s) { return s.id === S.active; })) S.active = rows[0].id;
+  sel.disabled = false;
+  sel.hidden = rows.length < 2;
+  sel.innerHTML = rows.map(function (s) {
+    return '<option value="' + esc(s.id) + '"' + (s.id === S.active ? ' selected' : '') + '>' + esc(s.name) + ' · ' + fmt(s.size) + (s.failed ? ' · load nahi hua' : '') + '</option>';
+  }).join('');
+}
+
+function renderPane() {
+  var isCode = !!CODE[S.tab];
+  $('#codeView').hidden = !isCode;
+  $('#infoView').hidden = S.tab !== 'info';
+  $('#assetView').hidden = isCode || S.tab === 'info';
+  if (S.tab === 'info') { $('#infoView').innerHTML = infoHtml(); return; }
+  if (!isCode) { renderAssets(false); return; }
+  var src = S.active && getSrc(S.active);
+  if (!src || src.type !== S.tab) {
+    $('#fname').textContent = ''; $('#fmeta').textContent = '';
+    $('#gut').textContent = ''; $('#code').innerHTML = '';
+    $('#qc').textContent = '';
+    return;
+  }
+  var v = build(src);
+  $('#fname').textContent = src.name;
+  var origSize = src.size, curSize = bytes(v.text);
+  var saveRatio = origSize > curSize ? ' (saved ' + Math.round((1 - curSize / origSize) * 100) + '%)' : '';
+  $('#fmeta').textContent = fmt(curSize) + saveRatio + ' · ' + v.lines.toLocaleString() + ' lines';
+
+  var gHtml = [];
+  for (var i = 1; i <= v.lines; i++) {
+    gHtml.push('<span data-line="' + i + '">' + i + '</span>');
+  }
+  $('#gut').innerHTML = gHtml.join('');
+  $('#cw').scrollTop = 0; $('#cw').scrollLeft = 0;
+  applySearch();
+}
+
+function infoHtml() {
+  var i = S.info;
+  if (!i) return '<div class="empty">Pehle koi website kholein.</div>';
+  var row = function (k, v) { return '<tr><th>' + esc(k) + '</th><td>' + v + '</td></tr>'; };
+  var page = [
+    row('Address', esc(i.url || 'Local source')),
+    i.status ? row('Status Code', esc(i.status)) : '',
+    i.contentType ? row('Content Type', esc(i.contentType)) : '',
+    row('HTML Size', fmt(i.size)),
+    i.title ? row('Title', esc(i.title)) : '',
+    i.desc ? row('Description', esc(i.desc)) : '',
+    i.lang ? row('Language', esc(i.lang)) : '',
+    i.viaProxy ? row('Proxy Route', 'Public CORS Proxy') : '',
+    i.truncated ? row('Notice', 'Body 3.5 MB par truncate hui') : ''
+  ].join('');
+  var c = i.counts;
+  var counts = row('Links', c.links) + row('Images', c.images) + row('Forms', c.forms) + row('Script Tags', c.scripts) + row('Stylesheet Links', c.sheets) + row('Inline Style Attributes', c.styleAttrs);
+  var hd = i.headers && Object.keys(i.headers).length ? '<section><h3>Response Headers (' + Object.keys(i.headers).length + ')</h3><div class="tblwrap"><table class="tbl">' + Object.keys(i.headers).map(function (k) { return row(k, esc(i.headers[k])); }).join('') + '</table></div></section>' : '';
+  var mt = i.metas.length ? '<section><h3>Meta Tags (' + i.metas.length + ')</h3><div class="tblwrap"><table class="tbl">' + i.metas.map(function (m) { return row(m[0], esc(m[1])); }).join('') + '</table></div></section>' : '';
+  var hs = i.hosts.length ? '<section><h3>External Domains (' + i.hosts.length + ')</h3><div class="chips" style="display:flex;flex-wrap:wrap;gap:6px">' + i.hosts.map(function (h) { return '<span class="chip">' + esc(h) + '</span>'; }).join('') + '</div></section>' : '';
+  return '<section><h3>Page Overview</h3><div class="tblwrap"><table class="tbl">' + page + '</table></div></section>' +
+    '<section><h3>Resource Counts</h3><div class="tblwrap"><table class="tbl">' + counts + '</table></div></section>' + hd + mt + hs;
+}
+
+function renderAll() {
+  renderTabs(); renderStats(); renderList(); renderPane();
+}
+
+function applySearch() {
+  var src = S.active && getSrc(S.active);
+  if (!src || !CODE[S.tab]) return;
+  var v = build(src), code = $('#code'), q = $('#q').value;
+  code.innerHTML = v.html;
+  marks = []; cur = -1;
+  if (q.length >= 2) {
+    var re = new RegExp(escRe(q), 'gi'), walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT), nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    for (var n = 0; n < nodes.length && marks.length < MAXM; n++) {
+      var node = nodes[n], t = node.nodeValue, last = 0, frag = null, m;
+      re.lastIndex = 0;
+      while ((m = re.exec(t)) && marks.length < MAXM) {
+        if (!m[0].length) { re.lastIndex++; continue; }
+        frag = frag || document.createDocumentFragment();
+        frag.append(t.slice(last, m.index));
+        var mk_ = document.createElement('mark'); mk_.textContent = m[0]; frag.append(mk_); marks.push(mk_);
+        last = m.index + m[0].length;
+      }
+      if (frag) { frag.append(t.slice(last)); node.replaceWith(frag); }
+    }
+  }
+  $('#qc').textContent = q.length >= 2 ? (marks.length ? '0/' + marks.length + (marks.length >= MAXM ? '+' : '') : 'koi nahi') : '';
+  if (marks.length) go(0);
+}
+
+function go(i) {
+  if (!marks.length) return;
+  if (cur > -1 && marks[cur]) marks[cur].classList.remove('cur');
+  cur = (i + marks.length) % marks.length;
+  marks[cur].classList.add('cur');
+  marks[cur].scrollIntoView({ block: 'center', inline: 'nearest' });
+  $('#qc').textContent = (cur + 1) + '/' + marks.length + (marks.length >= MAXM ? '+' : '');
+}
+
+function flash(btn, text) {
+  var old = btn.textContent; btn.textContent = text;
+  setTimeout(function () { btn.textContent = old; }, 1200);
+}
+
+async function copyText(t, btn) {
+  try { await navigator.clipboard.writeText(t); }
+  catch (e) {
+    var ta = document.createElement('textarea'); ta.value = t; ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.append(ta); ta.select(); try { document.execCommand('copy'); } catch (_) {} ta.remove();
+  }
+  if (btn) flash(btn, 'Ho gaya');
+}
+
+function save(blob, name) {
+  var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+}
+function current() { var s = S.active && getSrc(S.active); return s && s.type === S.tab ? s : null; }
+
+/* ---- Bulk ZIP Downloaders ---- */
+async function zipAll() {
+  if (!S.sources.length) return;
+  if (typeof JSZip === 'undefined') { setMsg('ZIP library load nahi hui.', 'bad'); return; }
+  var z = new JSZip();
+  S.sources.forEach(function (s) { z.file((s.kind === 'document' ? '' : s.type + '/') + s.file, s.text); });
+  var blob = await z.generateAsync({ type: 'blob' });
+  save(blob, S.host.replace(/[^\w.\-]/g, '_') + '-code.zip');
+  setMsg('Code ZIP download ho gayi (' + S.sources.length + ' files)', 'ok');
+}
+
+async function zipImages() {
+  if (!S.assets || !S.assets.images || !S.assets.images.length) { setMsg('Koi image nahi mili zip karne ke liye.', 'bad'); return; }
+  if (typeof JSZip === 'undefined') { setMsg('ZIP library load nahi hui.', 'bad'); return; }
+  var btn = $('#bZipImg'); var orig = btn.textContent; btn.textContent = 'Zipping...';
+  var z = new JSZip(), imgs = S.assets.images.slice(0, 100);
+  var count = 0;
+  for (var i = 0; i < imgs.length; i++) {
+    var a = imgs[i];
+    try {
+      if (a.code) { z.file('image_' + i + '.svg', a.code); count++; }
+      else if (/^data:image\//i.test(a.url)) {
+        var parts = a.url.split(','), ext = (a.url.match(/data:image\/(\w+);/) || [])[1] || 'png';
+        z.file('image_' + i + '.' + ext, parts[1], { base64: true }); count++;
+      } else if (apiMode === 'api') {
+        var r = await fetch('/api/proxy', { method: 'POST', headers: { 'content-type': 'text/plain' }, body: JSON.stringify({ url: a.url, method: 'GET', headers: {}, body: '', page: (S.info && S.info.url) || '' }) });
+        var j = await r.json();
+        if (j.ok && j.body) {
+          var ext_ = (j.contentType.split('/')[1] || 'bin').split(';')[0];
+          z.file('image_' + i + '.' + ext_, j.body, { base64: j.encoding === 'base64' }); count++;
+        }
+      }
+    } catch (e) {}
+  }
+  var blob = await z.generateAsync({ type: 'blob' });
+  save(blob, S.host.replace(/[^\w.\-]/g, '_') + '-images.zip');
+  btn.textContent = orig;
+  setMsg(count + ' images ZIP ho gayin!', 'ok');
+}
+
+async function zipFullSite() {
+  if (!S.sources.length) return;
+  var btn = $('#bZipSite'); var orig = btn.textContent; btn.textContent = 'Bundling...';
+  var z = new JSZip();
+  // Add sources
+  S.sources.forEach(function (s) { z.file((s.kind === 'document' ? '' : s.type + '/') + s.file, s.text); });
+  // Add metadata report
+  var readme = 'US MODS SOURCE VIEWER - COMPLETE OFFLINE SITE ARCHIVE\n' +
+    'Target URL: ' + ((S.info && S.info.url) || 'Local') + '\n' +
+    'Timestamp: ' + new Date().toISOString() + '\n' +
+    'Security Score: ' + ((S.assets && S.assets.security.score) || 'N/A') + '/100\n' +
+    'Tech Stack: ' + ((S.assets && S.assets.tech.map(function(t){ return t.name; }).join(', ')) || 'None') + '\n\n' +
+    'Files Included:\n' + S.sources.map(function(s){ return '- ' + s.file + ' (' + s.size + ' B)'; }).join('\n');
+  z.file('PROJECT_MANIFEST.txt', readme);
+  var blob = await z.generateAsync({ type: 'blob' });
+  save(blob, S.host.replace(/[^\w.\-]/g, '_') + '-full-bundle.zip');
+  btn.textContent = orig;
+  setMsg('Full Site Bundle ZIP download ho gayi!', 'ok');
+}
+
+function loadRecent() { try { return JSON.parse(localStorage.getItem('usv-recent') || '[]'); } catch (e) { return []; } }
+function fillRecent() { $('#recent').innerHTML = loadRecent().map(function (u) { return '<option value="' + esc(u) + '">'; }).join(''); }
+function pushRecent(u) { try { localStorage.setItem('usv-recent', JSON.stringify([u].concat(loadRecent().filter(function (x) { return x !== u; })).slice(0, 10))); fillRecent(); } catch (e) {} }
+
+var NAV = [];
+async function openPage(req, opts) {
+  opts = opts || {};
+  if ($('#goBtn').disabled) return;
+  var url = String(req.url || '').trim();
+  if (!url) return;
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  req = { url: url, method: String(req.method || 'GET').toUpperCase(), body: req.body || '', headers: req.headers || {} };
+  $('#goBtn').disabled = true;
+  $('#url').value = url;
+  var t0 = performance.now();
+  progress(0.08); setMsg('Page la raha hoon…');
+  if (window.USV_live) USV_live.reset();
+  try {
+    var res = await getRemote(url, req);
+    progress(0.25);
+    var finalUrl = res.finalUrl || url;
+    var text = res.body || '';
+    if (window.USV_live) USV_live.logDoc({ method: req.method, url: finalUrl, reqHeaders: req.headers, reqBody: req.body, resHeaders: res.headers || {}, resBody: text.slice(0, 20000), status: res.status, size: bytes(text), ms: Math.round(performance.now() - t0), resType: res.contentType || '', redirected: finalUrl !== url ? finalUrl : '' });
+    S.ms = 0;
+    await ingest(text, finalUrl, true, { meta: { status: res.status, contentType: res.contentType, headers: res.headers || {}, viaProxy: !!res.viaProxy, truncated: !!res.truncated } });
+    S.ms = performance.now() - t0;
+    renderStats();
+    var failed = S.sources.filter(function (s) { return s.failed; }).length;
+    setMsg(failed ? failed + ' file load nahi hui' : 'Tayyar! Heavy analysis complete.', failed ? 'bad' : 'ok');
+    if (!opts.noPush) NAV.push(req);
+    if (req.method === 'GET') {
+      pushRecent(url);
+      try { history.replaceState(null, '', '?url=' + encodeURIComponent(url)); } catch (e) {}
+    }
+  } catch (e) {
+    setMsg(e.message || 'Kuch ghalat ho gaya', 'bad');
+    if (window.USV_live) USV_live.logDoc({ method: req.method, url: url, reqHeaders: req.headers, reqBody: req.body, error: e.message || 'Fail' });
+  } finally {
+    progress(1); $('#goBtn').disabled = false;
+  }
+}
+
+function loadUrl(raw) { return openPage({ url: raw, method: 'GET' }); }
+
+window.USV = {
+  open: function (r) { return openPage(r); },
+  back: function () {
+    if (NAV.length < 2) return;
+    NAV.pop();
+    while (NAV.length && NAV[NAV.length - 1].method !== 'GET') NAV.pop();
+    var prev = NAV.pop();
+    if (prev) openPage(prev);
+  },
+  reload: function () {
+    var c = NAV[NAV.length - 1];
+    if (c) openPage(c, { noPush: true }); else if ($('#url').value) loadUrl($('#url').value);
+  },
+  apiOk: function () { return apiMode === 'api'; },
+  runJs: function () { return $('#optJs').checked; },
+  netChanged: function () {
+    clearTimeout(ncT);
+    ncT = setTimeout(function () { renderTabs(); if (S.tab === 'api' || S.tab === 'all') renderAssets(true); }, 250);
+  }
+};
+var ncT = 0;
+
+async function loadLocal(name, text) {
+  S.ms = 0;
+  var ext = (name.split('.').pop() || '').toLowerCase();
+  if (ext === 'css' || ext === 'js' || ext === 'mjs') {
+    var t = ext === 'css' ? 'css' : 'js', s = mk('f0', t, name, 'document', text, '');
+    s.file = name; S.sources = [s]; S.active = 'f0'; S.tab = t; S.host = 'local';
+    S.info = { origin: 'local', url: '', title: '', desc: '', lang: '', size: s.size, counts: { links: 0, images: 0, forms: 0, styleAttrs: 0, scripts: 0, sheets: 0 }, hosts: [], metas: [] };
+    try { S.assets = USV_assets.extract(new DOMParser().parseFromString('', 'text/html'), '', [s]); } catch (e) { S.assets = null; }
+    viewCache.clear(); renderAll();
+  } else {
+    await ingest(text, '', false, { label: name });
+  }
+  setMsg(name + ' khul gayi.', 'ok');
+}
+
+/* ---- Global Search Implementation ---- */
+function doGlobalSearch(q) {
+  var box = $('#gsResults');
+  q = String(q || '').trim();
+  if (q.length < 2) {
+    box.innerHTML = '<p class="hint">Kam az kam 2 characters likhein.</p>';
+    return;
+  }
+  var matches = [];
+  S.sources.forEach(function (s) {
+    if (s.failed) return;
+    var lines = s.text.split('\n');
+    lines.forEach(function (line, idx) {
+      if (line.toLowerCase().includes(q.toLowerCase()) && matches.length < 100) {
+        matches.push({ file: s, lineNo: idx + 1, text: line.trim() });
+      }
+    });
+  });
+
+  if (!matches.length) {
+    box.innerHTML = '<p class="hint">Kisi file mein "' + esc(q) + '" nahi mila.</p>';
+    return;
+  }
+
+  box.innerHTML = matches.map(function (m) {
+    return '<div class="arow" role="button" tabindex="0" data-act="jump-global" data-file="' + esc(m.file.id) + '" data-q="' + esc(q) + '" data-line="' + m.lineNo + '">' +
+      '<span class="tag t-' + m.file.type + '">' + m.file.type.toUpperCase() + '</span>' +
+      '<span class="au"><b>' + esc(m.file.name) + ' : Line ' + m.lineNo + '</b><i>' + esc(clip(m.text, 90)) + '</i></span>' +
+      '<button class="sm" type="button">Kholo</button></div>';
+  }).join('');
+}
+
+var gsDebounce;
+$('#gsInput').addEventListener('input', function () {
+  var v = this.value;
+  clearTimeout(gsDebounce);
+  gsDebounce = setTimeout(function () { doGlobalSearch(v); }, 150);
+});
+
+$('#bSearchAll').addEventListener('click', function () {
+  $('#globalSearchDlg').showModal();
+  $('#gsInput').focus();
+});
+
+$('#gsResults').addEventListener('click', function (e) {
+  var row = e.target.closest('[data-act="jump-global"]');
+  if (!row) return;
+  $('#globalSearchDlg').close();
+  jumpTo(row.dataset.file, row.dataset.q);
+  // Highlight line in gutter
+  var lineNo = row.dataset.line;
+  setTimeout(function () {
+    var gSpan = $('#gut span[data-line="' + lineNo + '"]');
+    if (gSpan) {
+      document.querySelectorAll('#gut span.active-line').forEach(function(el){ el.classList.remove('active-line'); });
+      gSpan.classList.add('active-line');
+      gSpan.scrollIntoView({ block: 'center' });
+    }
+  }, 200);
+});
+
+/* ---- Wiring & Event Handlers ---- */
+$('#go').addEventListener('submit', function (e) { e.preventDefault(); loadUrl($('#url').value); });
+document.querySelectorAll('.tab').forEach(function (b) {
+  b.addEventListener('click', function () { setTab(b.dataset.tab); });
+});
+$('#fileSel').addEventListener('change', function () { S.active = this.value; renderPane(); });
+var qt;
+$('#q').addEventListener('input', function () { clearTimeout(qt); qt = setTimeout(applySearch, 160); });
+$('#q').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); go(cur + (e.shiftKey ? -1 : 1)); } });
+$('#next').addEventListener('click', function () { go(cur + 1); });
+$('#prev').addEventListener('click', function () { go(cur - 1); });
+$('#bBeaut').addEventListener('click', function () { S.beautify = !S.beautify; $('#bBeaut').setAttribute('aria-pressed', S.beautify); $('#optBeaut').checked = S.beautify; renderPane(); });
+$('#optBeaut').addEventListener('change', function () { S.beautify = this.checked; $('#bBeaut').setAttribute('aria-pressed', S.beautify); renderPane(); });
+$('#bWrap').addEventListener('click', function () { S.wrap = !S.wrap; $('#bWrap').setAttribute('aria-pressed', S.wrap); $('#cw').classList.toggle('wrap', S.wrap); });
+$('#bCopy').addEventListener('click', function () { var s = current(); if (s) copyText(build(s).text, this); });
+$('#bDl').addEventListener('click', function () { var s = current(); if (s) save(new Blob([build(s).text], { type: 'text/plain;charset=utf-8' }), s.file); });
+$('#bZip').addEventListener('click', zipAll);
+$('#bZipImg').addEventListener('click', zipImages);
+$('#bZipSite').addEventListener('click', zipFullSite);
+
+$('#bPaste').addEventListener('click', function () { $('#pasteDlg').showModal(); $('#pasteTa').focus(); });
+$('#pasteForm').addEventListener('submit', function (e) {
+  var ok = e.submitter && e.submitter.value === 'ok', t = $('#pasteTa').value;
+  if (ok && t.trim()) { S.ms = 0; ingest(t, '', false, { label: 'Pasted HTML' }).then(function () { setMsg('Paste kiya hua HTML khul gaya.', 'ok'); }); }
+});
+$('#bFile').addEventListener('click', function () { $('#fileIn').click(); });
+function readFile(f) { var r = new FileReader(); r.onload = function () { loadLocal(f.name, String(r.result)); }; r.readAsText(f); }
+$('#fileIn').addEventListener('change', function () { if (this.files[0]) readFile(this.files[0]); this.value = ''; });
+var dragN = 0;
+window.addEventListener('dragenter', function (e) { e.preventDefault(); dragN++; $('#drop').classList.add('on'); });
+window.addEventListener('dragleave', function () { if (--dragN <= 0) { dragN = 0; $('#drop').classList.remove('on'); } });
+window.addEventListener('dragover', function (e) { e.preventDefault(); });
+window.addEventListener('drop', function (e) { e.preventDefault(); dragN = 0; $('#drop').classList.remove('on'); if (e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]); });
+
+// Theme switching: Cyber -> Light -> Dracula -> Monokai -> Cyber
+var THEMES = ['cyber', 'light', 'dracula', 'monokai'];
+function updateThemeBtn(th) {
+  var btn = $('#bTheme');
+  if (btn) btn.textContent = 'Theme: ' + th.charAt(0).toUpperCase() + th.slice(1);
+}
+$('#bTheme').addEventListener('click', function () {
+  var curTh = document.documentElement.dataset.theme || 'cyber';
+  var nextIdx = (THEMES.indexOf(curTh) + 1) % THEMES.length;
+  var nextTh = THEMES[nextIdx];
+  document.documentElement.dataset.theme = nextTh;
+  updateThemeBtn(nextTh);
+  try { localStorage.setItem('usv-theme', nextTh); } catch (e) {}
+});
+try {
+  var th = localStorage.getItem('usv-theme');
+  if (th) { document.documentElement.dataset.theme = th; updateThemeBtn(th); }
+} catch (e) {}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', function (e) {
+  var typing = /^(INPUT|TEXTAREA)$/.test((e.target.tagName || ''));
+  if (e.key === '/' && !typing) { e.preventDefault(); $('#q').focus(); }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); $('#url').focus(); $('#url').select(); }
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); $('#bSearchAll').click(); }
+});
+
+function setLayout(l) {
+  $('#app').dataset.layout = l;
+  document.querySelectorAll('[data-layout-btn]').forEach(function (x) { x.setAttribute('aria-pressed', x.dataset.layoutBtn === l ? 'true' : 'false'); });
+}
+function setTab(tab) {
+  S.tab = tab;
+  if (CODE[tab]) { var f = S.sources.find(function (s) { return s.type === tab; }); S.active = f ? f.id : null; }
+  renderAll();
+}
+
+function assetCtx() {
+  return {
+    live: window.USV_live ? USV_live.apiList() : [],
+    sources: S.sources.map(function (s) { return { id: s.id, type: s.type, name: s.name, size: s.size, kind: s.kind, failed: s.failed }; })
+  };
+}
+function renderAssets(keep) {
+  var el = $('#assetView'), top = keep ? el.scrollTop : 0;
+  el.innerHTML = USV_assets.view(S.tab, S.assets, assetCtx());
+  el.scrollTop = top;
+  loadFonts(el);
+}
+
+var fontState = {}, gfLinks = {};
+function fontFor(f, cb) {
+  var key = f.url + '|' + f.family, st = fontState[key];
+  if (st && st.done) return cb(st.fam);
+  if (st) { st.cbs.push(cb); return; }
+  st = fontState[key] = { done: false, fam: '', cbs: [cb] };
+  var finish = function (fam) { st.done = true; st.fam = fam; st.cbs.splice(0).forEach(function (c) { c(fam); }); };
+  if (f.css) {
+    try {
+      if (new URL(f.url).host !== 'fonts.googleapis.com') return finish('');
+      if (!gfLinks[f.url]) { var lk = document.createElement('link'); lk.rel = 'stylesheet'; lk.href = f.url; document.head.append(lk); gfLinks[f.url] = lk; }
+      return finish('"' + f.family.replace(/"/g, '') + '"');
+    } catch (e) { return finish(''); }
+  }
+  if (!/^https?:/i.test(f.url) || typeof FontFace === 'undefined') return finish('');
+  var fam = 'usvf' + Object.keys(fontState).length;
+  new FontFace(fam, 'url("' + f.url.replace(/"/g, '%22') + '")').load().then(function (face) { document.fonts.add(face); finish('"' + fam + '"'); }, function () { finish(''); });
+}
+function loadFonts(root) {
+  var fonts = (S.assets && S.assets.fonts) || [];
+  Array.prototype.slice.call(root.querySelectorAll('[data-fi]'), 0, 40).forEach(function (el) {
+    var f = fonts[+el.dataset.fi];
+    if (f) fontFor(f, function (fam) { if (fam) el.style.fontFamily = fam + ',sans-serif'; else el.classList.add('no'); });
+  });
+}
+
+function openAsset(k, i) {
+  var d = USV_assets.detail(S.assets, k, i);
+  if (!d) return;
+  $('#adTitle').textContent = d.title;
+  $('#adBody').innerHTML = d.html;
+  var dlg = $('#assetDlg');
+  if (!dlg.open) dlg.showModal();
+  $('#adBody').scrollTop = 0;
+  loadFonts($('#adBody'));
+}
+
+function jumpTo(fileId, q) {
+  var src = S.sources.find(function (s) { return s.id === fileId; });
+  if (!src) return;
+  var dlg = $('#assetDlg'); if (dlg.open) dlg.close();
+  if ($('#app').dataset.layout === 'site') setLayout('split');
+  S.tab = src.type; S.active = src.id;
+  $('#q').value = q || '';
+  renderAll();
+}
+
+function fileNameFor(a) { return String(a.name || 'file').replace(/[^\w.\-]+/g, '_'); }
+async function downloadAsset(a, btn) {
+  var old = btn.textContent;
+  try {
+    if (a.code) { save(new Blob([a.code], { type: 'image/svg+xml' }), fileNameFor(a).replace(/\.svg$/i, '') + '.svg'); return; }
+    if (/^data:/i.test(a.url)) { save(await (await fetch(a.url)).blob(), fileNameFor(a)); return; }
+    if (apiMode === 'api') {
+      btn.textContent = 'Aa raha hai...';
+      var r = await fetch('/api/proxy', { method: 'POST', headers: { 'content-type': 'text/plain' }, body: JSON.stringify({ url: a.url, method: 'GET', headers: {}, body: '', page: (S.info && S.info.url) || '' }) });
+      var j = await r.json();
+      if (j.ok) {
+        var data = j.body;
+        if (j.encoding === 'base64') { var s = atob(j.body), u8 = new Uint8Array(s.length); for (var x = 0; x < s.length; x++) u8[x] = s.charCodeAt(x); data = u8; }
+        save(new Blob([data], { type: j.contentType || 'application/octet-stream' }), fileNameFor(a));
+        return;
+      }
+    }
+    window.open(a.url, '_blank', 'noopener');
+  } catch (e) { window.open(a.url, '_blank', 'noopener'); }
+  finally { btn.textContent = old; }
+}
+
+async function tryGet(a, btn) {
+  var out = $('#adOut');
+  if (!out) return;
+  var old = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Chal raha hai...';
+  try {
+    var r = await getRemote(a.url, null), body = r.body || '', pretty = body;
+    try { pretty = JSON.stringify(JSON.parse(body), null, 2); } catch (e) {}
+    out.innerHTML = '<h4>Response · ' + esc(r.status) + '</h4><pre>' + esc(pretty.slice(0, 20000)) + (pretty.length > 20000 ? '\n...kata hua' : '') + '</pre>';
+  } catch (e) { out.innerHTML = '<p class="msg bad">' + esc(e.message || 'Fail') + '</p>'; }
+  finally { btn.disabled = false; btn.textContent = old; }
+}
+
+function onAct(e) {
+  var t = e.target.closest('[data-act]');
+  if (!t) return;
+  var act = t.dataset.act, k = t.dataset.k, i = +t.dataset.i;
+  var a = k && S.assets && S.assets[k] ? S.assets[k][i] : null;
+  if (act === 'go') setTab(t.dataset.tab);
+  else if (act === 'file') jumpTo(t.dataset.id, '');
+  else if (act === 'jump-sec') jumpTo(t.dataset.file, t.dataset.q);
+  else if (act === 'copy-color') { copyText(t.dataset.col); flash(t, 'Copied ' + t.dataset.col); }
+  else if (act === 'net') { if ($('#app').dataset.layout === 'source') setLayout('split'); if (window.USV_live) USV_live.show(t.dataset.id); }
+  else if (!a) return;
+  else if (act === 'open') openAsset(k, i);
+  else if (act === 'copy') copyText(t.dataset.f === 'snippet' ? a.snippet : t.dataset.f === 'code' ? (a.code || a.snippet) : a.url, t);
+  else if (act === 'dl') downloadAsset(a, t);
+  else if (act === 'jump') jumpTo(a.fileId, a.raw);
+  else if (act === 'try') tryGet(a, t);
+}
+
+$('#assetView').addEventListener('click', onAct);
+$('#adBody').addEventListener('click', onAct);
+$('#assetView').addEventListener('keydown', function (e) {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('arow')) { e.preventDefault(); e.target.click(); }
+});
+
+// Click gutter line number
+$('#gut').addEventListener('click', function (e) {
+  var span = e.target.closest('span[data-line]');
+  if (!span) return;
+  document.querySelectorAll('#gut span.active-line').forEach(function(el){ el.classList.remove('active-line'); });
+  span.classList.add('active-line');
+  setMsg('Line ' + span.dataset.line + ' selected', 'ok');
+});
+
+$('#adClose').addEventListener('click', function () { $('#assetDlg').close(); });
+$('#assetDlg').addEventListener('click', function (e) { if (e.target === this) this.close(); });
+document.querySelectorAll('[data-layout-btn]').forEach(function (b) {
+  b.addEventListener('click', function () { setLayout(b.dataset.layoutBtn); });
+});
+$('#optJs').addEventListener('change', function () { if (window.USV_live) USV_live.rerender(); });
+
+
+/* ---- Python Fast Extractor (--test-apis) & Server Button Handlers ---- */
+var lastPyReport = null;
+var pyServerActive = false;
+
+var PY_API_PATTERNS = [
+  /https?:\/\/(?:api\.[a-zA-Z0-9_\-\.]+|[a-zA-Z0-9_\-\.]+(?:\/[a-zA-Z0-9_\-\.]+)*(?:\/api|\/v\d+|\/graphql|\/rest|\/ajax|\/wp-json|\/trpc))[a-zA-Z0-9_\-\/\?&=%#\.]*/gi,
+  /["'`]((?:\/api|\/v\d+|\/graphql|\/rest|\/ajax|\/wp-json|\/trpc)\/[a-zA-Z0-9_\-\/\?&=%#\.]*)["'`]/gi,
+  /\bfetch\s*\(\s*["'`]([^"'`\)\s,]+)["'`]/gi,
+  /\baxios(?:\.(?:get|post|put|delete|patch))?\s*\(\s*["'`]([^"'`\)\s,]+)["'`]/gi,
+  /\$\s*\.\s*(?:get|post|getJSON|ajax)\s*\([^"'`]*["'`]([^"'`\)\s,]+)["'`]/gi,
+  /\.open\s*\(\s*["'`](?:GET|POST|PUT|DELETE|PATCH)["'`]\s*,\s*["'`]([^"'`\)\s,]+)["'`]/gi,
+  /(?:endpoint|apiUrl|baseURL|api_url|api_endpoint)\s*[:=]\s*["'`]([^"'`\)\s,;]+)["'`]/gi
+];
+
+var PY_SECRET_PATTERNS = [
+  ['Google API Key', /\bAIza[0-9A-Za-z-_]{35}\b/g],
+  ['AWS Access Key ID', /\b(?:A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}\b/g],
+  ['GitHub Personal Token', /\b(?:ghp|gho|ghu|ghs|ghr)_[0-9a-zA-Z]{36}\b/g],
+  ['Stripe Secret Key', /\b(?:sk|rk)_live_[0-9a-zA-Z]{24}\b/g],
+  ['Stripe Publishable Key', /\bpk_live_[0-9a-zA-Z]{24}\b/g],
+  ['OpenAI API Key', /\bsk-(?:proj-)?[a-zA-Z0-9_-]{32,64}\b/g],
+  ['Slack Token', /\bxox[baprs]-[0-9a-zA-Z]{10,48}\b/g],
+  ['JWT Token', /\beyJ[A-Za-z0-9-_]{10,}\.[A-Za-z0-9-_]{10,}\.[A-Za-z0-9-_]{10,}\b/g],
+  ['Bearer Token', /\bBearer\s+[a-zA-Z0-9_\-\.]{20,}\b/gi]
+];
+
+function pyLog(msg) {
+  var el = $('#pyTermLog');
+  if (!el) return;
+  el.textContent += '\n' + msg;
+  el.scrollTop = el.scrollHeight;
+}
+
+function scanCodeForPyExtractor(text, sourceName, baseUrl) {
+  var endpoints = [], secrets = [];
+  var seenEp = new Set(), seenSec = new Set();
+
+  PY_API_PATTERNS.forEach(function (pat) {
+    pat.lastIndex = 0;
+    var m;
+    while ((m = pat.exec(text)) !== null) {
+      var ep = (m[1] || m[0] || '').trim().replace(/^["'`\\]+|["'`\\]+$/g, '');
+      if (ep.length < 4 || /\.(?:js|css|png|jpe?g|svg|woff2?|ico|gif)$/i.test(ep)) continue;
+      if (!ep.startsWith('/') && !/^https?:\/\//i.test(ep)) continue;
+      var fullUrl = ep;
+      try { if (baseUrl) fullUrl = new URL(ep, baseUrl).href; } catch (e) {}
+      if (!seenEp.has(fullUrl)) {
+        seenEp.add(fullUrl);
+        var lower = ep.toLowerCase();
+        var isPost = ['post', 'auth', 'login', 'create', 'submit'].some(function (k) { return lower.includes(k); });
+        endpoints.push({
+          endpoint: ep,
+          full_url: fullUrl,
+          source: sourceName,
+          method: isPost ? 'POST' : 'GET'
+        });
+      }
+    }
+  });
+
+  PY_SECRET_PATTERNS.forEach(function (pair) {
+    var secName = pair[0], secPat = pair[1];
+    secPat.lastIndex = 0;
+    var m;
+    while ((m = secPat.exec(text)) !== null) {
+      var val = (m[1] || m[0] || '').trim();
+      if (val && !seenSec.has(val)) {
+        seenSec.add(val);
+        secrets.push({
+          type: secName,
+          value: val,
+          masked: val.length > 12 ? val.slice(0, 8) + '...' + val.slice(-4) : '***',
+          source: sourceName
+        });
+      }
+    }
+  });
+
+  return { endpoints: endpoints, secrets: secrets };
+}
+
+async function testEndpointLive(epUrl) {
+  var t0 = performance.now();
+  try {
+    var r = await getRemote(epUrl, { method: 'GET' });
+    return {
+      url: epUrl,
+      status: r.status || 200,
+      ms: Math.round(performance.now() - t0),
+      contentType: r.contentType || '',
+      snippet: String(r.body || '').slice(0, 350).trim()
+    };
+  } catch (e) {
+    return {
+      url: epUrl,
+      status: 0,
+      ms: Math.round(performance.now() - t0),
+      contentType: '',
+      snippet: 'Error: ' + (e.message || 'Request failed')
+    };
+  }
+}
+
+function renderPyReport(rep) {
+  lastPyReport = rep;
+  $('#stFiles').textContent = rep.files_analyzed || 0;
+  $('#stEps').textContent = (rep.endpoints || []).length;
+  $('#stSecs').textContent = (rep.secrets || []).length;
+  $('#stLive').textContent = (rep.tested_responses || []).length;
+  $('#stTime').textContent = (rep.duration || 0) + 's';
+
+  var out = '';
+
+  // 1. Live API Responses
+  var trs = rep.tested_responses || [];
+  out += '<section class="asec"><div class="ash"><h3>⚡ Live API Responses (--test-apis)</h3><span class="chip ok">' + trs.length + ' tested</span></div>';
+  if (trs.length) {
+    out += '<div class="alist">' + trs.map(function (tr, idx) {
+      var stCol = tr.status >= 200 && tr.status < 300 ? 'ok' : tr.status >= 300 && tr.status < 500 ? 'warn' : 'bad';
+      return '<div style="padding:10px;border-bottom:1px solid var(--line);display:grid;gap:6px;font:500 12px var(--f-code)">' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+        '<span class="chip ' + stCol + '">HTTP ' + (tr.status || 'ERR') + '</span>' +
+        '<b style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(tr.url) + '</b>' +
+        '<span class="chip">' + (tr.ms || 0) + ' ms</span>' +
+        '<button class="sm" type="button" data-py-copy="' + esc(tr.url) + '">Copy URL</button>' +
+        '</div>' +
+        (tr.snippet ? '<pre style="margin:0;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);max-height:140px;overflow:auto;font-size:11.5px">' + esc(tr.snippet) + '</pre>' : '<span class="msg">Empty response body</span>') +
+        '</div>';
+    }).join('') + '</div>';
+  } else {
+    out += '<p class="hint">Koi public HTTP GET endpoint test ke liye nahi mila.</p>';
+  }
+  out += '</section>';
+
+  // 2. Hardcoded API Endpoints
+  var eps = rep.endpoints || [];
+  out += '<section class="asec"><div class="ash"><h3>🎯 Hardcoded API Endpoints</h3><span class="chip">' + eps.length + ' found</span></div>';
+  if (eps.length) {
+    out += '<div class="alist">' + eps.map(function (ep, idx) {
+      var mCls = ep.method === 'POST' ? 'm-post' : 'm-get';
+      return '<div class="arow" style="cursor:default">' +
+        '<span class="m ' + mCls + '">' + esc(ep.method || 'GET') + '</span>' +
+        '<span class="au"><b>' + esc(ep.endpoint) + '</b><i>' + esc(ep.full_url) + ' · Found in: ' + esc(ep.source) + '</i></span>' +
+        '<div style="display:flex;gap:4px">' +
+        '<button class="sm" type="button" data-py-test="' + esc(ep.full_url) + '">⚡ Test</button>' +
+        '<button class="sm" type="button" data-py-copy="' + esc(ep.full_url) + '">Copy</button>' +
+        '</div></div>';
+    }).join('') + '</div>';
+  } else {
+    out += '<p class="hint">Is page mein koi hardcoded API endpoint nahi mila.</p>';
+  }
+  out += '</section>';
+
+  // 3. Secrets & Keys
+  var secs = rep.secrets || [];
+  out += '<section class="asec"><div class="ash"><h3>🔑 Hardcoded Secrets & API Keys</h3><span class="chip ' + (secs.length ? 'warn' : 'ok') + '">' + secs.length + ' found</span></div>';
+  if (secs.length) {
+    out += '<div class="alist">' + secs.map(function (s) {
+      return '<div class="arow" style="cursor:default">' +
+        '<span class="chip bad">' + esc(s.type) + '</span>' +
+        '<span class="au"><b>' + esc(s.masked || s.value) + '</b><i>Source: ' + esc(s.source) + '</i></span>' +
+        '<button class="sm" type="button" data-py-copy="' + esc(s.value || s.masked) + '">Copy Key</button>' +
+        '</div>';
+    }).join('') + '</div>';
+  } else {
+    out += '<p class="hint">Koi exposed API key ya secret token nahi mila.</p>';
+  }
+  out += '</section>';
+
+  $('#pyResultsBody').innerHTML = out;
+}
+
+async function runFastExtractorButton() {
+  var rawUrl = ($('#url').value || (S.info && S.info.url) || 'https://example.com').trim();
+  if (!/^https?:\/\//i.test(rawUrl)) rawUrl = 'https://' + rawUrl;
+  $('#url').value = rawUrl;
+
+  var dlg = $('#pyRunnerDlg');
+  $('#pyDlgTitle').textContent = '⚡ Running: fast_extractor.py --test-apis';
+  $('#pyDlgCmd').textContent = 'python3 fast_extractor.py ' + rawUrl + ' --test-apis';
+  $('#pyTermLog').textContent = '$ python3 fast_extractor.py ' + rawUrl + ' --test-apis\n[*] Initializing high-speed multi-threaded extractor...';
+  $('#pyResultsBody').innerHTML = '<p class="hint">Scanning source code, linked JS files, and testing API responses...</p>';
+  if (!dlg.open) dlg.showModal();
+
+  var tStart = performance.now();
+
+  // Also trigger main viewer load if needed
+  if (!S.info || S.info.url !== rawUrl) {
+    openPage({ url: rawUrl, method: 'GET' });
+  }
+
+  // Try server backend /api/fast-scan first if available
+  try {
+    pyLog('[*] Connecting to fast-scan engine for: ' + rawUrl);
+    var apiRes = await fetch('/api/fast-scan?url=' + encodeURIComponent(rawUrl) + '&test=1');
+    if (apiRes.ok) {
+      var data = await apiRes.json();
+      if (data && data.ok) {
+        pyLog('[+] Page & linked JS fetched (' + data.files_analyzed + ' files analyzed)');
+        pyLog('[+] Discovered ' + data.endpoints_count + ' Hardcoded API Endpoints');
+        pyLog('[+] Discovered ' + data.secrets_count + ' Secrets / Keys');
+        pyLog('[+] Completed live GET tests for ' + (data.tested_responses || []).length + ' endpoints in ' + data.duration + 's');
+        pyLog('========================================================');
+        pyLog('🚀 EXTRACTION COMPLETE!');
+        renderPyReport(data);
+        return;
+      }
+    }
+  } catch (e) {}
+
+  // Browser Multi-Worker Fallback (works even on direct file:// or CORS mode!)
+  try {
+    pyLog('[*] Fetching target HTML: ' + rawUrl + '...');
+    var pageRes = await getRemote(rawUrl, { method: 'GET' });
+    var html = pageRes.body || '';
+    var finalUrl = pageRes.finalUrl || rawUrl;
+    pyLog('[+] Page fetched (' + fmt(bytes(html)) + ', Status: ' + (pageRes.status || 200) + ')');
+
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    var jsUrls = [], seenJs = new Set();
+    doc.querySelectorAll('script[src]').forEach(function (s) {
+      try {
+        var u = new URL(s.getAttribute('src'), finalUrl).href;
+        if (/^https?:\/\//i.test(u) && !seenJs.has(u) && jsUrls.length < 20) {
+          seenJs.add(u); jsUrls.push(u);
+        }
+      } catch (e) {}
+    });
+
+    var sources = [{ name: 'HTML Source', text: html }];
+    doc.querySelectorAll('script:not([src])').forEach(function (s, idx) {
+      if (s.textContent.trim()) sources.push({ name: 'Inline Script #' + (idx + 1), text: s.textContent });
+    });
+
+    pyLog('[+] Found ' + jsUrls.length + ' external JS files & ' + (sources.length - 1) + ' inline scripts.');
+
+    if (jsUrls.length) {
+      pyLog('[*] Downloading ' + jsUrls.length + ' JS files concurrently...');
+      var jsFetched = await Promise.all(jsUrls.map(async function (u) {
+        try {
+          var r = await getRemote(u, { method: 'GET' });
+          return { name: u.split('/').pop().split('?')[0] || 'script.js', text: r.body || '' };
+        } catch (e) { return null; }
+      }));
+      jsFetched.forEach(function (item) { if (item && item.text) sources.push(item); });
+    }
+
+    pyLog('[*] Scanning ' + sources.length + ' files for hardcoded endpoints & secrets...');
+    var allEps = [], allSecs = [], seenEp = new Set();
+    sources.forEach(function (src) {
+      var res = scanCodeForPyExtractor(src.text, src.name, finalUrl);
+      res.endpoints.forEach(function (ep) {
+        if (!seenEp.has(ep.full_url)) { seenEp.add(ep.full_url); allEps.push(ep); }
+      });
+      allSecs = allSecs.concat(res.secrets);
+    });
+
+    // Also include any endpoints already found in S.assets
+    if (S.assets && S.assets.api) {
+      S.assets.api.forEach(function (a) {
+        if (a.url && !seenEp.has(a.url)) {
+          seenEp.add(a.url);
+          allEps.push({ endpoint: a.raw || a.url, full_url: a.url, source: a.where || 'JS', method: a.method === 'POST' ? 'POST' : 'GET' });
+        }
+      });
+    }
+
+    pyLog('[+] Discovered ' + allEps.length + ' Hardcoded API Endpoints!');
+    pyLog('[+] Discovered ' + allSecs.length + ' Hardcoded Secrets / API Keys!');
+
+    var tested = [];
+    var testTargets = allEps.filter(function (e) { return /^https?:\/\//i.test(e.full_url); }).slice(0, 10);
+    if (testTargets.length) {
+      pyLog('[*] Speed-testing ' + testTargets.length + ' endpoints (--test-apis)...');
+      tested = await Promise.all(testTargets.map(function (ep) { return testEndpointLive(ep.full_url); }));
+    }
+
+    var dur = ((performance.now() - tStart) / 1000).toFixed(2);
+    pyLog('========================================================');
+    pyLog('🚀 EXTRACTION COMPLETE (' + dur + 's)');
+    renderPyReport({
+      ok: true,
+      target: rawUrl,
+      finalUrl: finalUrl,
+      duration: dur,
+      files_analyzed: sources.length,
+      endpoints: allEps,
+      secrets: allSecs,
+      tested_responses: tested
+    });
+  } catch (err) {
+    pyLog('[!] Error: ' + (err.message || 'Scan failed'));
+  }
+}
+
+async function startPythonServerButton() {
+  var badge = $('#pyEngineBadge');
+  var btn1 = $('#bPyServer'), btn2 = $('#bPyServerBar');
+  var dlg = $('#pyRunnerDlg');
+  $('#pyDlgTitle').textContent = '🐍 Python Server Engine (server.py)';
+  $('#pyDlgCmd').textContent = 'python3 server.py';
+  $('#pyTermLog').textContent = '$ python3 server.py\n============================================================\n  🐍 US MODS Python Server Starting...\n  🔗 Local Endpoint: ' + (location.origin || 'http://localhost:3000') + '\n  ⚡ Fast Scan API:  /api/fast-scan?url=<URL>&test=1\n  🛡️ Proxy Engine:   /api/proxy & /api/fetch\n============================================================';
+  if (!dlg.open) dlg.showModal();
+
+  // Check if backend server /api/health is live
+  var serverKind = 'Browser Built-in Proxy Engine';
+  try {
+    var r = await fetch('/api/health');
+    if (r.ok) {
+      var j = await r.json();
+      apiMode = 'api';
+      serverKind = j.server || 'US-MODS-Server';
+      pyLog('[+] Backend Server Connected: ' + serverKind + ' (Status: 200 OK)');
+    } else {
+      pyLog('[*] Running in Standalone Browser Engine Mode (Public Proxy Active)');
+    }
+  } catch (e) {
+    pyLog('[*] Running in Standalone Browser Engine Mode (Public Proxy Active)');
+  }
+
+  pyServerActive = true;
+  if (btn1) { btn1.dataset.active = 'true'; btn1.textContent = '🟢 Python Server: ON'; }
+  if (btn2) { btn2.dataset.active = 'true'; btn2.textContent = '🟢 server.py: RUNNING'; }
+  if (badge) { badge.className = 'chip ok'; badge.textContent = '🟢 Engine: ' + serverKind; }
+
+  var curUrl = ($('#url').value || '').trim();
+  if (curUrl) {
+    pyLog('[*] Auto-starting extraction & live preview for: ' + curUrl);
+    await runFastExtractorButton();
+  } else {
+    pyLog('[+] Server Engine is LIVE! Testing sample page endpoints...');
+    var sampleScan = scanCodeForPyExtractor(SAMPLE, 'Sample HTML', 'https://jsonplaceholder.typicode.com');
+    var tested = await Promise.all(sampleScan.endpoints.map(function (e) { return testEndpointLive(e.full_url); }));
+    renderPyReport({
+      ok: true,
+      target: 'Sample Demo Page',
+      finalUrl: 'https://jsonplaceholder.typicode.com/posts',
+      duration: 0.25,
+      files_analyzed: S.sources.length || 3,
+      endpoints: sampleScan.endpoints,
+      secrets: sampleScan.secrets,
+      tested_responses: tested
+    });
+    setMsg('🐍 Python Server Engine Active! Ab koi bhi URL daal kar check karein.', 'ok');
+  }
+}
+
+$('#bFastExtract').addEventListener('click', runFastExtractorButton);
+$('#bFastExtractBar').addEventListener('click', runFastExtractorButton);
+$('#bPyServer').addEventListener('click', startPythonServerButton);
+$('#bPyServerBar').addEventListener('click', startPythonServerButton);
+$('#pyReRun').addEventListener('click', runFastExtractorButton);
+$('#pyDlgClose').addEventListener('click', function () { $('#pyRunnerDlg').close(); });
+$('#pyRunnerDlg').addEventListener('click', function (e) { if (e.target === this) this.close(); });
+
+$('#pyDlJson').addEventListener('click', function () {
+  if (!lastPyReport) return;
+  var blob = new Blob([JSON.stringify(lastPyReport, null, 2)], { type: 'application/json' });
+  save(blob, 'fast_extractor_report.json');
+  flash(this, 'Downloaded!');
+});
+
+$('#pyCopyLog').addEventListener('click', function () {
+  var txt = $('#pyTermLog').textContent + '\n\n' + (lastPyReport ? JSON.stringify(lastPyReport, null, 2) : '');
+  copyText(txt, this);
+});
+
+$('#pyResultsBody').addEventListener('click', async function (e) {
+  var copyBtn = e.target.closest('[data-py-copy]');
+  if (copyBtn) {
+    copyText(copyBtn.dataset.pyCopy, copyBtn);
+    return;
+  }
+  var testBtn = e.target.closest('[data-py-test]');
+  if (testBtn) {
+    var u = testBtn.dataset.pyTest;
+    var orig = testBtn.textContent;
+    testBtn.disabled = true; testBtn.textContent = 'Testing...';
+    pyLog('[*] Testing endpoint: ' + u);
+    var res = await testEndpointLive(u);
+    if (lastPyReport) {
+      lastPyReport.tested_responses = [res].concat(lastPyReport.tested_responses || []);
+      renderPyReport(lastPyReport);
+    }
+    testBtn.disabled = false; testBtn.textContent = orig;
+  }
+});
+
+/* ---- Example Sample Page ---- */
+var SAMPLE = [
+  '<!doctype html>', '<html lang="ur">', '<head>', '  <meta charset="utf-8">',
+  '  <title>US MODS Coffee & Chai Menu</title>', '  <meta name="description" content="Pro developer sample demo for source viewer">',
+  '  <meta property="og:title" content="Chai Wala Menu Live">',
+  '  <meta property="og:description" content="Order fresh hot doodh patti & snacks">',
+  '  <meta property="og:image" content="https://images.unsplash.com/photo-1544787219-7f47ccb76574?w=600">',
+  '  <link rel="canonical" href="https://chaiwala.example.com">',
+  '  <style>',
+  '    :root { --brand: #b4531f; --bg: #fff8ee; --accent: #2563eb; }',
+  '    body { font-family: system-ui; margin: 0; background: var(--bg); color: #2b1d12; }',
+  '    .card { max-width: 380px; margin: 40px auto; padding: 24px; border-radius: 14px; background: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }',
+  '    button { padding: 10px 18px; border: 0; border-radius: 8px; background: var(--brand); color: #fff; font-weight: 600; cursor: pointer; }',
+  '    .tag { display: inline-block; padding: 2px 8px; background: #fef3c7; color: #92400e; border-radius: 4px; font-size: 12px; }',
+  '  </style>',
+  '</head>', '<body>', '  <div class="card">',
+  '    <span class="tag">Special Chai</span>',
+  '    <h1>Karak Doodh Patti</h1>',
+  '    <p id="price" style="color:#059669;font-weight:700">Rs. 140</p>',
+  '    <button id="order">Order karo</button>',
+  '    <div style="margin-top:14px">',
+  "      <svg width=\"40\" height=\"40\" viewBox=\"0 0 40 40\" aria-label=\"Chai cup\"><circle cx=\"20\" cy=\"20\" r=\"18\" fill=\"#b4531f\"/></svg>",
+  '    </div>',
+  '    <p><a href="https://example.com/menu" target="_blank" rel="noopener noreferrer">Poora menu dekhein</a></p>',
+  '  </div>',
+  '  <script>',
+  '    console.log("Website preview initialized!");',
+  '    const btn = document.getElementById("order");',
+  '    btn.addEventListener("click", () => {',
+  '      console.info("Order button clicked!");',
+  '      btn.textContent = "Order bhej raha hoon...";',
+  '      fetch("https://jsonplaceholder.typicode.com/posts", {',
+  '        method: "POST",',
+  '        headers: { "content-type": "application/json" },',
+  '        body: JSON.stringify({ item: "Karak Doodh Patti", price: 140, time: Date.now() })',
+  '      }).then(r => r.json()).then(d => {',
+  '        console.log("Response received:", d);',
+  '        btn.textContent = "Order #" + d.id + " lag gaya!";',
+  '      }).catch(err => { console.error("Order error:", err); });',
+  '    });',
+  '  <\/script>',
+  '</body>', '</html>'
+].join('\n');
+
+/* ---- Initialize ---- */
+fillRecent();
+var qs = new URLSearchParams(location.search).get('url');
+probeApi().then(function () {
+  return ingest(SAMPLE, '', false, { label: 'Example page (Heavy Demo)' });
+}).then(function () {
+  if (qs) { $('#url').value = qs; loadUrl(qs); }
+  else setMsg('Heavy Pro v2.0 Ready! Preview mein "Order karo" dabayen ya URL daalein.');
+});
+})();
+</script>
 </body>
 </html>

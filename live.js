@@ -1,0 +1,855 @@
+/* live.js: Pro Developer Preview & Network Inspector Engine
+   Website preview (sandboxed iframe), deep network traffic interception,
+   console log capturing, interactive request replayer, and multi-device preview.
+   Loaded before the main script. The main script provides window.USV. */
+(function () {
+'use strict';
+
+var $ = function (s, r) { return (r || document).querySelector(s); };
+var esc = function (s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
+var fmtB = function (n) { return n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(2) + ' MB'; };
+var MAX_ROWS = 500, MAX_KEEP = 2000;
+
+var NET = new Map(), ORDER = [];
+var CONSOLE_LOGS = [];
+var F = { type: 'all', q: '', click: null, viewMode: 'net' }; // viewMode: 'net' | 'console'
+var SEL = null, DTAB = 'headers', timer = 0;
+var last = { html: '', base: '' };
+var deviceMode = 'desk', rotated = false;
+
+/* ------------------------------------------------------------------
+   Spy script: injected directly inside the preview iframe
+------------------------------------------------------------------ */
+function spy(cfg) {
+  var W = window, D = document;
+  var MAXB = 25000, uid = 0, rnd = Math.random().toString(36).slice(2, 7), lastClick = null;
+  var nativeFetch = W.fetch ? W.fetch.bind(W) : null;
+
+  function post(m) { m.usv = 1; try { W.parent.postMessage(m, '*'); } catch (e) {} }
+  function nid() { return rnd + (++uid); }
+  function trunc(s) { s = s == null ? '' : String(s); return s.length > MAXB ? s.slice(0, MAXB) + '\n...[kata hua]' : s; }
+  function abs(u) { try { return new URL(u, D.baseURI || undefined).href; } catch (e) { return String(u); } }
+  function clickNow() { return lastClick && Date.now() - lastClick.t < 3000 ? lastClick.id : null; }
+  function hdrs(h) { var o = {}; if (h && h.forEach) h.forEach(function (v, k) { o[k] = v; }); return o; }
+
+  /* In-memory storage and cookies for sandboxed frame */
+  function mem() {
+    var d = {};
+    return {
+      getItem: function (k) { return Object.prototype.hasOwnProperty.call(d, k) ? d[k] : null; },
+      setItem: function (k, v) { d[k] = String(v); },
+      removeItem: function (k) { delete d[k]; },
+      clear: function () { d = {}; },
+      key: function (i) { return Object.keys(d)[i] || null; },
+      get length() { return Object.keys(d).length; }
+    };
+  }
+  ['localStorage', 'sessionStorage'].forEach(function (n) {
+    try { W[n].getItem('x'); } catch (e) { try { Object.defineProperty(W, n, { value: mem(), configurable: true }); } catch (_) {} }
+  });
+  try { void D.cookie; } catch (e) {
+    var ck = {};
+    try {
+      Object.defineProperty(D, 'cookie', {
+        configurable: true,
+        get: function () { return Object.keys(ck).map(function (k) { return k + '=' + ck[k]; }).join('; '); },
+        set: function (v) { var p = String(v).split(';')[0], i = p.indexOf('='); if (i > 0) ck[p.slice(0, i).trim()] = p.slice(i + 1); }
+      });
+    } catch (_) {}
+  }
+
+  /* Console logs capture */
+  ['log', 'info', 'warn', 'error'].forEach(function (lvl) {
+    var orig = W.console && W.console[lvl];
+    if (!orig) return;
+    W.console[lvl] = function () {
+      try {
+        var args = Array.prototype.slice.call(arguments).map(function (a) {
+          if (a === undefined) return 'undefined';
+          if (a === null) return 'null';
+          if (typeof a === 'object') {
+            try { return JSON.stringify(a); } catch (e) { return String(a); }
+          }
+          return String(a);
+        });
+        post({ type: 'console', level: lvl, args: args, t: Date.now() });
+      } catch (e) {}
+      return orig.apply(W.console, arguments);
+    };
+  });
+  W.addEventListener('error', function (e) {
+    post({ type: 'console', level: 'error', args: [e.message + (e.filename ? ' (' + e.filename + ':' + e.lineno + ')' : '')], t: Date.now() });
+  });
+
+  /* Logging requests */
+  function start(rec) { rec.type = 'req'; rec.phase = 'start'; rec.id = rec.id || nid(); rec.clickId = clickNow(); rec.t = Date.now(); post(rec); return rec; }
+  function end(rec, extra) { extra.type = 'req'; extra.phase = 'end'; extra.id = rec.id; post(extra); }
+
+  function b64ToBytes(b) { var s = atob(b), n = s.length, a = new Uint8Array(n); for (var i = 0; i < n; i++) a[i] = s.charCodeAt(i); return a; }
+
+  function net(kind, url, method, headers, body) {
+    var rec = start({ kind: kind, method: method, url: url, reqHeaders: headers, reqBody: trunc(body) });
+    var t0 = performance.now();
+    var noBody = method === 'GET' || method === 'HEAD';
+    var p;
+    if (cfg.proxyOk) {
+      p = nativeFetch(cfg.proxy, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: JSON.stringify({ url: url, method: method, headers: headers, body: noBody ? null : body, page: cfg.page }) })
+        .then(function (r) { return r.json(); })
+        .then(function (j) { if (!j.ok) throw new TypeError(j.error || 'Failed to fetch'); return j; });
+    } else {
+      p = nativeFetch(url, { method: method, headers: headers, body: noBody ? undefined : body })
+        .then(function (r) {
+          return r.text().then(function (t) {
+            return { ok: true, status: r.status, statusText: r.statusText, headers: hdrs(r.headers), encoding: 'text', body: t, finalUrl: r.url || url, contentType: r.headers.get('content-type') || '', size: t.length };
+          });
+        });
+    }
+    return p.then(function (j) {
+      end(rec, { status: j.status, statusText: j.statusText, resHeaders: j.headers, resBody: j.encoding === 'base64' ? '[binary ' + (j.contentType || '') + ']' : trunc(j.body), size: j.size, ms: Math.round(performance.now() - t0), resType: j.contentType || '', redirected: j.finalUrl && j.finalUrl !== url ? j.finalUrl : '' });
+      return j;
+    }, function (err) {
+      end(rec, { error: String(err && err.message || err), ms: Math.round(performance.now() - t0) });
+      throw err;
+    });
+  }
+
+  function synth(j) {
+    var h = new Headers();
+    Object.keys(j.headers || {}).forEach(function (k) {
+      if (!/^(content-encoding|content-length|transfer-encoding|set-cookie)$/i.test(k)) { try { h.set(k, j.headers[k]); } catch (e) {} }
+    });
+    var nb = j.status === 101 || j.status === 204 || j.status === 205 || j.status === 304;
+    var body = nb ? null : (j.encoding === 'base64' ? b64ToBytes(j.body) : j.body);
+    var st = j.status >= 200 && j.status <= 599 ? j.status : 200;
+    var r = new Response(body, { status: st, statusText: j.statusText || '', headers: h });
+    try { Object.defineProperty(r, 'url', { value: j.finalUrl || '' }); } catch (e) {}
+    return r;
+  }
+
+  /* Monkey-patch fetch */
+  if (nativeFetch) {
+    W.fetch = function (input, init) {
+      var req;
+      try { req = new Request(input, init); } catch (e) { return nativeFetch(input, init); }
+      var url = req.url;
+      if (!/^https?:/i.test(url) || url.indexOf(cfg.proxy) === 0) return nativeFetch(input, init);
+      return req.clone().text().catch(function () { return ''; }).then(function (body) {
+        return net('fetch', url, req.method, hdrs(req.headers), body);
+      }).then(synth);
+    };
+  }
+
+  /* Monkey-patch XMLHttpRequest */
+  function bodyToString(b, H) {
+    if (b == null) return '';
+    if (typeof b === 'string') return b;
+    if (typeof URLSearchParams !== 'undefined' && b instanceof URLSearchParams) {
+      if (!H['content-type']) H['content-type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
+      return b.toString();
+    }
+    if (typeof FormData !== 'undefined' && b instanceof FormData) {
+      var qs = new URLSearchParams();
+      b.forEach(function (v, k) { qs.append(k, typeof v === 'string' ? v : (v && v.name) || ''); });
+      if (!H['content-type']) H['content-type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
+      return qs.toString();
+    }
+    if (b instanceof ArrayBuffer || ArrayBuffer.isView(b)) return new TextDecoder().decode(b);
+    return '';
+  }
+
+  function FakeXHR() {
+    var x = this, et = new EventTarget();
+    var m = 'GET', u = '', H = {}, done = false, aborted = false;
+    var st = { rs: 0, status: 0, statusText: '', text: '', bytes: null, url: '', hdrs: {} };
+    x.responseType = ''; x.timeout = 0; x.withCredentials = false;
+    x.upload = { addEventListener: function () {}, removeEventListener: function () {} };
+    ['readystatechange', 'loadstart', 'progress', 'load', 'error', 'abort', 'timeout', 'loadend'].forEach(function (n) { x['on' + n] = null; });
+    function fire(n) {
+      var ev = new Event(n), h = x['on' + n];
+      if (typeof h === 'function') { try { h.call(x, ev); } catch (e) { setTimeout(function () { throw e; }); } }
+      et.dispatchEvent(ev);
+    }
+    x.addEventListener = function (n, f, o) { et.addEventListener(n, f, o); };
+    x.removeEventListener = function (n, f, o) { et.removeEventListener(n, f, o); };
+    x.dispatchEvent = function (e) { return et.dispatchEvent(e); };
+    function setRS(n) { st.rs = n; fire('readystatechange'); }
+    function resp() {
+      var t = x.responseType;
+      if (t === 'json') { try { return JSON.parse(st.text); } catch (e) { return null; } }
+      if (t === 'arraybuffer') { var b = st.bytes || new TextEncoder().encode(st.text); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); }
+      if (t === 'blob') return new Blob([st.bytes || st.text], { type: st.hdrs['content-type'] || '' });
+      return st.text;
+    }
+    Object.defineProperties(x, {
+      readyState: { get: function () { return st.rs; } },
+      status: { get: function () { return st.status; } },
+      statusText: { get: function () { return st.statusText; } },
+      responseURL: { get: function () { return st.url; } },
+      responseText: { get: function () { return st.text; } },
+      response: { get: resp },
+      responseXML: { get: function () { return null; } }
+    });
+    x.open = function (method, url) { m = String(method).toUpperCase(); u = abs(url); H = {}; done = false; aborted = false; setRS(1); };
+    x.setRequestHeader = function (k, v) { k = String(k).toLowerCase(); H[k] = H[k] ? H[k] + ', ' + v : String(v); };
+    x.getResponseHeader = function (k) { var v = st.hdrs[String(k).toLowerCase()]; return v === undefined ? null : v; };
+    x.getAllResponseHeaders = function () { return Object.keys(st.hdrs).map(function (k) { return k + ': ' + st.hdrs[k]; }).join('\r\n'); };
+    x.overrideMimeType = function () {};
+    x.abort = function () { aborted = true; if (st.rs > 0 && !done) { done = true; st.rs = 0; fire('abort'); fire('loadend'); } };
+    x.send = function (body) {
+      var b = bodyToString(body, H);
+      fire('loadstart');
+      net('xhr', u, m, H, b).then(function (j) {
+        if (aborted) return;
+        st.status = j.status; st.statusText = j.statusText || ''; st.url = j.finalUrl || u;
+        st.hdrs = {};
+        Object.keys(j.headers || {}).forEach(function (k) { st.hdrs[k.toLowerCase()] = j.headers[k]; });
+        if (j.encoding === 'base64') { st.bytes = b64ToBytes(j.body); st.text = ''; try { st.text = new TextDecoder().decode(st.bytes); } catch (e) {} }
+        else st.text = j.body || '';
+        setRS(2); setRS(3); setRS(4); done = true;
+        fire('load'); fire('loadend');
+      }, function () {
+        if (aborted) return;
+        st.rs = 4; fire('readystatechange'); done = true; fire('error'); fire('loadend');
+      });
+    };
+  }
+  FakeXHR.UNSENT = 0; FakeXHR.OPENED = 1; FakeXHR.HEADERS_RECEIVED = 2; FakeXHR.LOADING = 3; FakeXHR.DONE = 4;
+  if (nativeFetch && typeof EventTarget === 'function') W.XMLHttpRequest = FakeXHR;
+
+  /* Monkey-patch sendBeacon */
+  try {
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon = function (u, data) {
+        var body = typeof data === 'string' ? data : (typeof URLSearchParams !== 'undefined' && data instanceof URLSearchParams ? data.toString() : '');
+        net('beacon', abs(u), 'POST', { 'content-type': 'text/plain;charset=UTF-8' }, body).catch(function () {});
+        return true;
+      };
+    }
+  } catch (e) {}
+
+  /* Browser PerformanceObserver */
+  try {
+    new PerformanceObserver(function (list) {
+      list.getEntries().forEach(function (e) {
+        var it = e.initiatorType;
+        if (it === 'fetch' || it === 'xmlhttprequest' || it === 'beacon') return;
+        if (e.name.indexOf(cfg.proxy) === 0 || /^(data|blob):/.test(e.name)) return;
+        post({ type: 'req', phase: 'end', id: nid(), kind: 'resource', method: 'GET', url: e.name, resType: it, status: e.responseStatus || 0, size: e.transferSize || e.encodedBodySize || 0, ms: Math.round(e.duration), clickId: clickNow(), t: Date.now() });
+      });
+    }).observe({ type: 'resource', buffered: true });
+  } catch (e) {}
+
+  /* Click tracking */
+  function describe(el) {
+    if (!el || !el.tagName) return '';
+    var tag = el.tagName.toLowerCase(), s = tag;
+    if (el.id) s += '#' + el.id;
+    else if (typeof el.className === 'string' && el.className.trim()) s += '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.');
+    var t = '';
+    if (tag !== 'body' && tag !== 'html') t = String(el.getAttribute('aria-label') || el.value || el.alt || el.title || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40);
+    return s + (t ? ' "' + t + '"' : '');
+  }
+  W.addEventListener('click', function (e) {
+    var t = e.target, el = t && t.closest ? (t.closest('a,button,input,select,summary,[role=button],[onclick]') || t) : t;
+    lastClick = { id: nid(), t: Date.now() };
+    post({ type: 'click', id: lastClick.id, desc: describe(el), t: Date.now() });
+  }, true);
+
+  /* Intercept link navigation */
+  W.addEventListener('click', function (e) {
+    if (e.defaultPrevented) return;
+    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if (!a) return;
+    var raw = a.getAttribute('href');
+    if (!raw) return;
+    if (raw.charAt(0) === '#') {
+      e.preventDefault();
+      var id = raw.slice(1);
+      try { id = decodeURIComponent(id); } catch (x) {}
+      var el = id ? (D.getElementById(id) || D.getElementsByName(id)[0]) : null;
+      if (el) el.scrollIntoView(); else if (!id) W.scrollTo(0, 0);
+      return;
+    }
+    if (/^(javascript|mailto|tel|sms|data|blob):/i.test(raw) || a.hasAttribute('download')) return;
+    e.preventDefault();
+    post({ type: 'navigate', method: 'GET', url: abs(raw), via: 'link', clickId: lastClick && lastClick.id });
+  }, false);
+
+  /* Intercept form submit */
+  function submitForm(f, sub) {
+    var method = String((sub && sub.getAttribute && sub.getAttribute('formmethod') ? sub.formMethod : f.method) || 'get').toUpperCase();
+    var action = sub && sub.getAttribute && sub.getAttribute('formaction') ? sub.formAction : f.action;
+    action = action || D.baseURI;
+    var fd;
+    try { fd = new FormData(f, sub || undefined); } catch (e) { fd = new FormData(f); }
+    var qs = new URLSearchParams();
+    fd.forEach(function (v, k) { qs.append(k, typeof v === 'string' ? v : (v && v.name) || ''); });
+    var cid = lastClick && lastClick.id;
+    if (method === 'GET') {
+      var u = new URL(action, D.baseURI || undefined);
+      u.search = qs.toString();
+      post({ type: 'navigate', method: 'GET', url: u.href, via: 'form', clickId: cid });
+    } else {
+      post({ type: 'navigate', method: method, url: abs(action), body: qs.toString(), headers: { 'content-type': 'application/x-www-form-urlencoded' }, via: 'form', clickId: cid });
+    }
+  }
+  W.addEventListener('submit', function (e) {
+    if (e.defaultPrevented) return;
+    e.preventDefault();
+    submitForm(e.target, e.submitter);
+  }, false);
+  try { HTMLFormElement.prototype.submit = function () { submitForm(this); }; } catch (e) {}
+  try { W.open = function (u) { if (u) post({ type: 'navigate', method: 'GET', url: abs(u), via: 'window.open' }); return null; }; } catch (e) {}
+}
+
+/* ------------------------------------------------------------------
+   Preview rendering
+------------------------------------------------------------------ */
+function buildPreview(html, base, runJs) {
+  var doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('meta[http-equiv="Content-Security-Policy" i]').forEach(function (n) { n.remove(); });
+  var eff = base || '', be = doc.querySelector('base[href]');
+  if (be) { try { eff = new URL(be.getAttribute('href'), base || undefined).href; } catch (e) {} be.remove(); }
+  if (!runJs) doc.querySelectorAll('script').forEach(function (n) { n.remove(); });
+  var web = /^https?:/.test(location.protocol);
+  var cfg = { proxy: (web ? location.origin : '') + '/api/proxy', proxyOk: !!(web && window.USV && window.USV.apiOk()), page: base || '', base: eff };
+  var s = doc.createElement('script');
+  s.textContent = '(' + spy.toString() + ')(' + JSON.stringify(cfg).replace(/</g, '\\u003c') + ');';
+  var head = doc.head;
+  if (eff) {
+    var b = doc.createElement('base');
+    b.setAttribute('href', eff);
+    head.insertBefore(b, head.firstChild);
+    head.insertBefore(s, b.nextSibling);
+  } else head.insertBefore(s, head.firstChild);
+  return '<!doctype html>\n' + doc.documentElement.outerHTML;
+}
+
+function updateDeviceStyle() {
+  var st = $('#pvStage');
+  if (!st) return;
+  st.classList.remove('mob', 'tab', 'lap', 'rot');
+  if (deviceMode === 'mob') st.classList.add('mob');
+  else if (deviceMode === 'tab') st.classList.add('tab');
+  else if (deviceMode === 'lap') st.classList.add('lap');
+  if (rotated) st.classList.add('rot');
+}
+
+function render(html, base) {
+  last = { html: html, base: base || '' };
+  var f = $('#frame');
+  if (!f) return;
+  var runJs = window.USV ? window.USV.runJs() : true;
+  try { f.srcdoc = buildPreview(html, base, runJs); }
+  catch (e) { f.srcdoc = '<p style="font:14px system-ui;padding:16px">Preview nahi ban saka.</p>'; }
+  $('#pvUrl').textContent = base || 'Local HTML (sample ya paste kiya hua)';
+  $('#pvEmpty').hidden = true;
+  updateDeviceStyle();
+}
+
+/* ------------------------------------------------------------------
+   Network & Console Log State
+------------------------------------------------------------------ */
+function num(v) { v = Number(v); return isFinite(v) ? v : null; }
+function str(v, n) { return String(v == null ? '' : v).slice(0, n || 4000); }
+function obj(v) { var o = {}; if (v && typeof v === 'object') Object.keys(v).slice(0, 80).forEach(function (k) { o[str(k, 120)] = str(v[k], 4000); }); return o; }
+
+function netChanged() { if (window.USV && window.USV.netChanged) window.USV.netChanged(); }
+function schedule() { if (timer) return; timer = setTimeout(function () { timer = 0; renderNet(); netChanged(); }, 40); }
+
+function trim() {
+  if (ORDER.length <= MAX_KEEP) return;
+  ORDER.splice(0, ORDER.length - MAX_KEEP).forEach(function (id) { NET.delete(id); });
+}
+
+function upsert(m) {
+  var id = str(m.id, 40);
+  if (!id) return;
+  var e = NET.get(id);
+  if (!e) {
+    e = { id: id, kind: 'fetch', method: 'GET', url: '', reqHeaders: {}, resHeaders: {}, status: null, t: m.t || Date.now() };
+    NET.set(id, e); ORDER.push(id); trim();
+  }
+  if (m.kind) e.kind = str(m.kind, 12);
+  if (m.method) e.method = str(m.method, 10).toUpperCase();
+  if (m.url) e.url = str(m.url, 2000);
+  if (m.reqHeaders) e.reqHeaders = obj(m.reqHeaders);
+  if (m.resHeaders) e.resHeaders = obj(m.resHeaders);
+  if (m.reqBody != null) e.reqBody = str(m.reqBody, 25000);
+  if (m.resBody != null) e.resBody = str(m.resBody, 25000);
+  if (m.status != null) e.status = num(m.status);
+  if (m.statusText != null) e.statusText = str(m.statusText, 80);
+  if (m.size != null) e.size = num(m.size);
+  if (m.ms != null) e.ms = num(m.ms);
+  if (m.resType != null) e.resType = str(m.resType, 120);
+  if (m.redirected) e.redirected = str(m.redirected, 2000);
+  if (m.error) e.error = str(m.error, 300);
+  if (m.clickId) e.clickId = str(m.clickId, 40);
+  if (m.trigger) e.trigger = str(m.trigger, 200);
+  if (m.phase === 'end') e.done = true;
+  schedule();
+}
+
+function addClick(m) {
+  var id = str(m.id, 40);
+  if (!id || NET.has(id)) return;
+  NET.set(id, { id: id, kind: 'click', desc: str(m.desc, 120), t: m.t || Date.now() });
+  ORDER.push(id); trim();
+  F.click = id;
+  SEL = null;
+  schedule();
+}
+
+function addConsole(m) {
+  CONSOLE_LOGS.push({ level: m.level || 'log', args: m.args || [], t: m.t || Date.now() });
+  if (CONSOLE_LOGS.length > 500) CONSOLE_LOGS.shift();
+  if (F.viewMode === 'console') renderConsole();
+}
+
+function reset() {
+  NET.clear(); ORDER = []; CONSOLE_LOGS = []; F.click = null; SEL = null;
+  renderNet();
+  netChanged();
+}
+
+function logDoc(d) {
+  var id = 'doc' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  upsert({ id: id, kind: 'document', method: d.method, url: d.url, reqHeaders: d.reqHeaders, reqBody: d.reqBody, resHeaders: d.resHeaders, resBody: d.resBody, status: d.status, size: d.size, ms: d.ms, resType: d.resType, redirected: d.redirected, error: d.error, phase: 'end' });
+}
+
+function nameOf(u) {
+  try {
+    var x = new URL(u), p = x.pathname.split('/').filter(Boolean).pop() || x.host;
+    return { name: (p + x.search).slice(0, 80), host: x.host };
+  } catch (e) { return { name: str(u, 80), host: '' }; }
+}
+
+function group(e) {
+  var k = e.kind;
+  if (k === 'fetch' || k === 'xhr' || k === 'beacon') return 'xhr';
+  if (k === 'document') return 'doc';
+  var t = (e.resType || '').toLowerCase(), u = e.url.split('?')[0].toLowerCase();
+  if (t === 'script' || /\.m?js$/.test(u)) return 'js';
+  if (t === 'css' || /\.css$/.test(u)) return 'css';
+  if (t === 'img' || /\.(png|jpe?g|gif|webp|svg|ico|avif)$/.test(u)) return 'img';
+  return 'other';
+}
+
+function typeLabel(e) {
+  if (e.kind !== 'resource') return e.kind;
+  var g = group(e);
+  return g === 'other' ? (e.resType || 'other') : g;
+}
+function mc(m) { return m === 'GET' ? 'get' : m === 'POST' ? 'post' : 'other'; }
+function stText(e) { return e.error ? 'ERR' : e.status == null ? '...' : e.status === 0 ? '-' : String(e.status); }
+function stClass(e) {
+  if (e.error) return 'bad';
+  if (e.status == null) return 'pend';
+  if (e.status === 0) return 'mute';
+  return e.status < 300 ? 'ok' : e.status < 400 ? 'warn' : 'bad';
+}
+
+function visible(e) {
+  if (e.kind === 'click') return F.click ? e.id === F.click : (F.type === 'all' && !F.q);
+  if (F.click && e.clickId !== F.click) return false;
+  if (F.type !== 'all' && group(e) !== F.type) return false;
+  if (F.q) {
+    var q = F.q.toLowerCase();
+    if ((e.url + ' ' + e.method + ' ' + (e.status == null ? '' : e.status)).toLowerCase().indexOf(q) < 0) return false;
+  }
+  return true;
+}
+
+function rowHtml(e) {
+  if (e.kind === 'click') {
+    return '<button class="nclick" type="button" data-click="' + esc(e.id) + '"><span>Click</span>' + esc(e.desc || '') + '</button>';
+  }
+  var n = nameOf(e.url);
+  return '<button class="nrow' + (SEL === e.id ? ' sel' : '') + '" type="button" data-id="' + esc(e.id) + '" title="' + esc(e.url) + '">' +
+    '<span class="m m-' + mc(e.method) + '">' + esc(e.method) + '</span>' +
+    '<span class="st ' + stClass(e) + '">' + esc(stText(e)) + '</span>' +
+    '<span class="nm"><b>' + esc(n.name) + '</b><i>' + esc(n.host) + '</i></span>' +
+    '<span class="mt">' + esc(typeLabel(e)) + (e.ms != null ? ' · ' + e.ms + ' ms' : '') + (e.size ? ' · ' + fmtB(e.size) : '') + '</span></button>';
+}
+
+function renderConsole() {
+  var list = $('#nList');
+  if (!list) return;
+  if (!CONSOLE_LOGS.length) {
+    list.innerHTML = '<p class="hint">Console khali hai. Website preview mein scripts ke console.log / warn / error yahan dikhenge.</p>';
+    return;
+  }
+  var html = CONSOLE_LOGS.map(function (c) {
+    var color = c.level === 'error' ? 'var(--bad)' : c.level === 'warn' ? 'var(--warn)' : 'var(--fg)';
+    var prefix = c.level.toUpperCase();
+    var time = new Date(c.t).toLocaleTimeString();
+    return '<div style="padding:6px 10px;border-bottom:1px solid var(--line);font:500 12px var(--f-code);display:flex;gap:8px;color:' + color + '">' +
+      '<span style="opacity:0.6;font-size:11px">' + time + '</span>' +
+      '<span class="chip ' + (c.level === 'error' ? 'bad' : c.level === 'warn' ? 'warn' : '') + '" style="font-size:10px;padding:1px 6px">' + prefix + '</span>' +
+      '<span style="flex:1;white-space:pre-wrap;overflow-wrap:anywhere">' + esc(c.args.join(' ')) + '</span></div>';
+  }).join('');
+  list.innerHTML = html;
+  list.scrollTop = list.scrollHeight;
+}
+
+function renderNet() {
+  var list = $('#nList'), det = $('#nDet');
+  if (!list) return;
+  if (F.viewMode === 'console') {
+    renderConsole();
+    return;
+  }
+
+  var reqs = ORDER.filter(function (id) { return NET.get(id).kind !== 'click'; }).length;
+  $('#nCount').textContent = reqs + ' requests';
+
+  var chip = $('#nChip');
+  if (F.click && NET.has(F.click)) {
+    chip.hidden = false;
+    chip.innerHTML = '<span>Sirf is click ke requests: ' + esc(NET.get(F.click).desc) + '</span><button class="sm" type="button" data-act="allclicks">Sab dikhao</button>';
+  } else chip.hidden = true;
+
+  if (SEL && NET.has(SEL)) {
+    list.hidden = true; chip.hidden = true; det.hidden = false;
+    renderDetail();
+    return;
+  }
+  SEL = null; list.hidden = false; det.hidden = true;
+  var ids = ORDER.filter(function (id) { return visible(NET.get(id)); });
+  var more = ids.length - MAX_ROWS;
+  if (more > 0) ids = ids.slice(-MAX_ROWS);
+  if (!ids.length) {
+    list.innerHTML = '<p class="hint">' + (reqs ? 'Is filter mein koi request nahi.' : 'Abhi koi request nahi. Website mein kisi button ya link par click karein, uski GET aur POST requests yahan aayengi.') + '</p>';
+    return;
+  }
+  var atBottom = list.scrollTop + list.clientHeight >= list.scrollHeight - 40;
+  list.innerHTML = (more > 0 ? '<p class="hint">Purani ' + more + ' requests chhupi hain, filter lagayen.</p>' : '') + ids.map(function (id) { return rowHtml(NET.get(id)); }).join('');
+  if (atBottom) list.scrollTop = list.scrollHeight;
+}
+
+/* ------------------------------------------------------------------
+   Request Detail with Multi-language Code & Replayer
+------------------------------------------------------------------ */
+function table(pairs) {
+  if (!pairs.length) return '<p class="hint">Khali.</p>';
+  return '<div class="tblwrap"><table class="tbl">' + pairs.map(function (p) { return '<tr><th>' + esc(p[0]) + '</th><td>' + esc(p[1]) + '</td></tr>'; }).join('') + '</table></div>';
+}
+function pairsOf(o) { return Object.keys(o || {}).map(function (k) { return [k, o[k]]; }); }
+function tryJson(s) { try { var v = JSON.parse(s); return typeof v === 'object' && v !== null ? v : undefined; } catch (e) { return undefined; } }
+function qsPairs(s) { var out = []; try { new URLSearchParams(s).forEach(function (v, k) { out.push([k, v]); }); } catch (e) {} return out; }
+function queryOf(u) { try { return qsPairs(new URL(u).search); } catch (e) { return []; } }
+
+function hdrHtml(e) {
+  var click = e.clickId && NET.get(e.clickId) ? NET.get(e.clickId).desc : '';
+  var gen = [
+    ['URL', e.url], ['Method', e.method],
+    ['Status', e.error ? 'Fail: ' + e.error : (e.status == null ? 'Intezar...' : e.status + (e.statusText ? ' ' + e.statusText : ''))],
+    ['Type', typeLabel(e)]
+  ];
+  if (e.ms != null) gen.push(['Latency', e.ms + ' ms']);
+  if (e.size) gen.push(['Size', fmtB(e.size)]);
+  if (e.redirected) gen.push(['Redirected to', e.redirected]);
+  if (click) gen.push(['Click se', click]);
+  return '<h4>General Info</h4>' + table(gen) +
+    '<h4>Request Headers</h4>' + (e.kind === 'resource' ? '<p class="hint">Browser ne khud load kiya, headers dastiyab nahi.</p>' : table(pairsOf(e.reqHeaders))) +
+    '<h4>Response Headers</h4>' + (e.kind === 'resource' ? '<p class="hint">Browser resources ke headers nahi dikhata.</p>' : table(pairsOf(e.resHeaders)));
+}
+
+function payHtml(e) {
+  var out = '', qp = queryOf(e.url);
+  if (qp.length) out += '<h4>Query parameters</h4>' + table(qp);
+  if (e.reqBody) {
+    out += '<h4>Request body</h4>';
+    var ct = (e.reqHeaders && e.reqHeaders['content-type']) || '', j = tryJson(e.reqBody);
+    if (j !== undefined) out += '<pre>' + esc(JSON.stringify(j, null, 2)) + '</pre>';
+    else if (/x-www-form-urlencoded/i.test(ct)) out += table(qsPairs(e.reqBody));
+    else out += '<pre>' + esc(e.reqBody) + '</pre>';
+  }
+  return out || '<p class="hint">Is request ke saath koi data (payload) nahi gaya.</p>';
+}
+
+function resHtml(e) {
+  if (e.error) return '<p class="hint">Request fail hui: ' + esc(e.error) + '</p>';
+  if (!e.resBody) return '<p class="hint">' + (e.kind === 'resource' ? 'Browser ne ye resource khud load kiya, iski body save nahi hoti.' : 'Response ki body khali hai ya abhi nahi aayi.') + '</p>';
+  var j = tryJson(e.resBody);
+  return '<button class="sm" type="button" data-copy="res">Copy response</button><pre>' + esc(j !== undefined ? JSON.stringify(j, null, 2) : e.resBody) + '</pre>';
+}
+
+function sq(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
+function curlOf(e) {
+  var p = ['curl ' + sq(e.url)];
+  if (e.method !== 'GET') p.push('-X ' + e.method);
+  Object.keys(e.reqHeaders || {}).forEach(function (k) { p.push('-H ' + sq(k + ': ' + e.reqHeaders[k])); });
+  if (e.reqBody) p.push('--data-raw ' + sq(e.reqBody));
+  return p.join(' \\\n  ');
+}
+function fetchOf(e) {
+  var o = { method: e.method };
+  if (Object.keys(e.reqHeaders || {}).length) o.headers = e.reqHeaders;
+  if (e.reqBody) o.body = e.reqBody;
+  return 'const res = await fetch(' + JSON.stringify(e.url) + ', ' + JSON.stringify(o, null, 2) + ');\nconst data = await res.text();\nconsole.log(res.status, data);';
+}
+function pyOf(e) {
+  var h = JSON.stringify(e.reqHeaders || {}, null, 2);
+  var b = e.reqBody ? 'data=' + JSON.stringify(e.reqBody) : '';
+  return 'import requests\n\nheaders = ' + h + '\nres = requests.' + e.method.toLowerCase() + '("' + e.url + '", headers=headers' + (b ? ', ' + b : '') + ')\nprint(res.status_code, res.text)';
+}
+function axiosOf(e) {
+  return 'const axios = require("axios");\n\nconst res = await axios({\n  method: "' + e.method.toLowerCase() + '",\n  url: "' + e.url + '",\n  headers: ' + JSON.stringify(e.reqHeaders || {}) + (e.reqBody ? ',\n  data: ' + JSON.stringify(e.reqBody) : '') + '\n});\nconsole.log(res.status, res.data);';
+}
+
+function codeHtml(e) {
+  return '<h4>cURL</h4><pre>' + esc(curlOf(e)) + '</pre><button class="sm" type="button" data-copy="curl">Copy cURL</button>' +
+    '<h4>JavaScript Fetch</h4><pre>' + esc(fetchOf(e)) + '</pre><button class="sm" type="button" data-copy="fetch">Copy Fetch</button>' +
+    '<h4>Python (requests)</h4><pre>' + esc(pyOf(e)) + '</pre><button class="sm" type="button" data-copy="py">Copy Python</button>' +
+    '<h4>Node.js (Axios)</h4><pre>' + esc(axiosOf(e)) + '</pre><button class="sm" type="button" data-copy="axios">Copy Axios</button>' +
+    '<button class="sm" type="button" data-copy="url">Copy URL</button>';
+}
+
+function replayHtml(e) {
+  var methods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
+  var mOpts = methods.map(function (m) { return '<option value="' + m + '"' + (m === e.method ? ' selected' : '') + '>' + m + '</option>'; }).join('');
+  var hStr = JSON.stringify(e.reqHeaders || {}, null, 2);
+  var bStr = e.reqBody || '';
+
+  return '<h4>API Request Runner & Replay</h4>' +
+    '<div style="display:grid;gap:8px">' +
+    '<div style="display:flex;gap:6px">' +
+    '<select class="sm" id="repMeth" style="width:100px">' + mOpts + '</select>' +
+    '<input class="sm" id="repUrl" type="url" value="' + esc(e.url) + '" style="flex:1">' +
+    '<button class="btn go" id="repSend" type="button" style="height:32px;padding:0 14px">Send / Run</button>' +
+    '</div>' +
+    '<h4>Headers (JSON format)</h4>' +
+    '<textarea id="repHdrs" style="width:100%;height:80px;font:400 12px var(--f-code);background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:8px">' + esc(hStr) + '</textarea>' +
+    '<h4>Payload / Body</h4>' +
+    '<textarea id="repBody" style="width:100%;height:80px;font:400 12px var(--f-code);background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:8px">' + esc(bStr) + '</textarea>' +
+    '<div id="repResult"></div>' +
+    '</div>';
+}
+
+function renderDetail() {
+  var e = NET.get(SEL), box = $('#nDet');
+  if (!e) return;
+  var tabs = [['headers', 'Headers'], ['payload', 'Payload'], ['response', 'Response'], ['code', 'Code'], ['replay', 'Replay']];
+  var body = DTAB === 'payload' ? payHtml(e) : DTAB === 'response' ? resHtml(e) : DTAB === 'code' ? codeHtml(e) : DTAB === 'replay' ? replayHtml(e) : hdrHtml(e);
+  box.innerHTML = '<div class="dbar"><button class="sm" type="button" data-act="back">&larr; Wapas</button>' +
+    '<span class="m m-' + mc(e.method) + '">' + esc(e.method) + '</span><span class="st ' + stClass(e) + '">' + esc(stText(e)) + '</span>' +
+    '<div class="dtabs">' + tabs.map(function (t) { return '<button class="sm" type="button" data-tab="' + t[0] + '" aria-pressed="' + (DTAB === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div></div>' +
+    '<div class="dbody">' + body + '</div>';
+}
+
+function copy(text, btn) {
+  var done = function () { var o = btn.textContent; btn.textContent = 'Ho gaya'; setTimeout(function () { btn.textContent = o; }, 1100); };
+  var fb = function () {
+    var ta = document.createElement('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.append(ta); ta.select(); try { document.execCommand('copy'); } catch (e) {} ta.remove(); done();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fb); else fb();
+}
+
+/* ------------------------------------------------------------------
+   Export HAR (HTTP Archive 1.2)
+------------------------------------------------------------------ */
+function exportHar() {
+  var entries = ORDER.map(function (id) { return NET.get(id); }).filter(function (e) {
+    return e && e.kind !== 'click';
+  }).map(function (e) {
+    var started = new Date(e.t || Date.now()).toISOString();
+    var reqHdrs = Object.keys(e.reqHeaders || {}).map(function (k) { return { name: k, value: e.reqHeaders[k] }; });
+    var resHdrs = Object.keys(e.resHeaders || {}).map(function (k) { return { name: k, value: e.resHeaders[k] }; });
+    return {
+      startedDateTime: started,
+      time: e.ms || 0,
+      request: {
+        method: e.method,
+        url: e.url,
+        httpVersion: 'HTTP/1.1',
+        headers: reqHdrs,
+        queryString: queryOf(e.url).map(function (p) { return { name: p[0], value: p[1] }; }),
+        postData: e.reqBody ? { mimeType: (e.reqHeaders && e.reqHeaders['content-type']) || 'text/plain', text: e.reqBody } : undefined,
+        headersSize: -1,
+        bodySize: e.reqBody ? e.reqBody.length : 0
+      },
+      response: {
+        status: e.status || 0,
+        statusText: e.statusText || '',
+        httpVersion: 'HTTP/1.1',
+        headers: resHdrs,
+        content: {
+          size: e.size || 0,
+          mimeType: e.resType || 'application/octet-stream',
+          text: e.resBody || ''
+        },
+        headersSize: -1,
+        bodySize: e.size || 0
+      },
+      cache: {},
+      timings: { send: 0, wait: e.ms || 0, receive: 0 }
+    };
+  });
+
+  var har = {
+    log: {
+      version: '1.2',
+      creator: { name: 'US MODS Source Viewer Heavy Pro', version: '2.0.0' },
+      entries: entries
+    }
+  };
+
+  var blob = new Blob([JSON.stringify(har, null, 2)], { type: 'application/json' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (last.base ? new URL(last.base).host.replace(/[^\w.-]/g, '_') : 'network') + '.har';
+  document.body.append(a); a.click(); a.remove();
+}
+
+/* ------------------------------------------------------------------
+   Interactive Request Runner Replay Trigger
+------------------------------------------------------------------ */
+async function runReplay() {
+  var meth = $('#repMeth').value;
+  var url = $('#repUrl').value;
+  var hdrsJson = $('#repHdrs').value;
+  var body = $('#repBody').value;
+  var resBox = $('#repResult');
+  var sendBtn = $('#repSend');
+
+  var hdrs = {};
+  try { if (hdrsJson.trim()) hdrs = JSON.parse(hdrsJson); } catch (e) {
+    resBox.innerHTML = '<p class="msg bad">Headers JSON sahi nahi hai.</p>';
+    return;
+  }
+
+  sendBtn.disabled = true; sendBtn.textContent = 'Running...';
+  resBox.innerHTML = '<p class="hint">Bhej raha hoon...</p>';
+  var t0 = performance.now();
+
+  try {
+    var r = await fetch('/api/proxy', {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain' },
+      body: JSON.stringify({ url: url, method: meth, headers: hdrs, body: (meth === 'GET' || meth === 'HEAD') ? null : body, page: last.base || '' })
+    });
+    var j = await r.json();
+    var elapsed = Math.round(performance.now() - t0);
+    if (!j.ok) throw new Error(j.error || 'Request failed');
+
+    var textBody = j.encoding === 'base64' ? '[Binary base64 ' + j.contentType + ']' : j.body;
+    var pretty = textBody;
+    try { pretty = JSON.stringify(JSON.parse(textBody), null, 2); } catch (e) {}
+
+    resBox.innerHTML = '<h4>Response · ' + j.status + ' ' + (j.statusText || '') + ' (' + elapsed + ' ms · ' + fmtB(j.size || 0) + ')</h4>' +
+      '<pre style="max-height:260px;overflow:auto">' + esc(pretty) + '</pre>';
+  } catch (err) {
+    resBox.innerHTML = '<p class="msg bad">Error: ' + esc(err.message || 'Failed') + '</p>';
+  } finally {
+    sendBtn.disabled = false; sendBtn.textContent = 'Send / Run';
+  }
+}
+
+/* ------------------------------------------------------------------
+   Wiring
+------------------------------------------------------------------ */
+window.addEventListener('message', function (ev) {
+  var f = $('#frame');
+  if (!f || ev.source !== f.contentWindow) return;
+  var d = ev.data;
+  if (!d || d.usv !== 1) return;
+  if (d.type === 'req') upsert(d);
+  else if (d.type === 'click') addClick(d);
+  else if (d.type === 'console') addConsole(d);
+  else if (d.type === 'navigate' && window.USV) {
+    window.USV.open({ url: str(d.url, 3000), method: str(d.method || 'GET', 10), body: str(d.body, 200000), headers: obj(d.headers) });
+  }
+});
+
+$('#nList').addEventListener('click', function (ev) {
+  var c = ev.target.closest('.nclick');
+  if (c) { F.click = F.click === c.dataset.click ? null : c.dataset.click; renderNet(); return; }
+  var r = ev.target.closest('.nrow');
+  if (r) { SEL = r.dataset.id; DTAB = 'headers'; renderNet(); }
+});
+$('#nChip').addEventListener('click', function (ev) { if (ev.target.closest('[data-act="allclicks"]')) { F.click = null; renderNet(); } });
+$('#nDet').addEventListener('click', function (ev) {
+  var b = ev.target.closest('button');
+  if (!b) return;
+  if (b.dataset.act === 'back') { SEL = null; renderNet(); return; }
+  if (b.dataset.tab) { DTAB = b.dataset.tab; renderDetail(); return; }
+  if (b.id === 'repSend') { runReplay(); return; }
+  if (b.dataset.copy) {
+    var e = NET.get(SEL);
+    if (!e) return;
+    var t = b.dataset.copy === 'curl' ? curlOf(e)
+      : b.dataset.copy === 'fetch' ? fetchOf(e)
+      : b.dataset.copy === 'py' ? pyOf(e)
+      : b.dataset.copy === 'axios' ? axiosOf(e)
+      : b.dataset.copy === 'url' ? e.url
+      : (tryJson(e.resBody || '') !== undefined ? JSON.stringify(tryJson(e.resBody), null, 2) : e.resBody || '');
+    copy(t, b);
+  }
+});
+
+$('#nType').addEventListener('change', function () { F.type = this.value; renderNet(); });
+var qt;
+$('#nQ').addEventListener('input', function () { var v = this.value; clearTimeout(qt); qt = setTimeout(function () { F.q = v.trim(); renderNet(); }, 140); });
+$('#nClear').addEventListener('click', reset);
+
+// Network vs Console Switcher
+var nViewSel = $('#nViewSel');
+if (nViewSel) {
+  nViewSel.addEventListener('change', function () {
+    F.viewMode = this.value;
+    renderNet();
+  });
+}
+
+// HAR Export
+var bHar = $('#bHar');
+if (bHar) bHar.addEventListener('click', exportHar);
+
+$('#pvBack').addEventListener('click', function () { if (window.USV) window.USV.back(); });
+$('#pvReload').addEventListener('click', function () { if (window.USV) window.USV.reload(); });
+
+// Device Viewport Presets
+function setDevice(mode) {
+  deviceMode = mode;
+  document.querySelectorAll('[data-pv-dev]').forEach(function (btn) {
+    btn.setAttribute('aria-pressed', btn.dataset.pvDev === mode ? 'true' : 'false');
+  });
+  updateDeviceStyle();
+}
+
+document.querySelectorAll('[data-pv-dev]').forEach(function (btn) {
+  btn.addEventListener('click', function () { setDevice(btn.dataset.pvDev); });
+});
+
+var pvRot = $('#pvRot');
+if (pvRot) {
+  pvRot.addEventListener('click', function () {
+    rotated = !rotated;
+    pvRot.setAttribute('aria-pressed', rotated ? 'true' : 'false');
+    updateDeviceStyle();
+  });
+}
+
+window.USV_live = {
+  render: render,
+  rerender: function () { if (last.html) render(last.html, last.base); },
+  reset: reset,
+  logDoc: logDoc,
+  exportHar: exportHar,
+  apiList: function () {
+    return ORDER.map(function (id) { return NET.get(id); }).filter(function (e) {
+      return e.kind === 'fetch' || e.kind === 'xhr' || e.kind === 'beacon' || (e.kind === 'document' && e.method !== 'GET');
+    }).map(function (e) { return { id: e.id, method: e.method, url: e.url, status: e.status, error: e.error, kind: e.kind, ms: e.ms }; });
+  },
+  show: function (id) {
+    if (!NET.has(id)) return;
+    F.click = null; SEL = id; DTAB = 'headers';
+    renderNet();
+    var n = $('#net'); if (n && n.scrollIntoView) n.scrollIntoView({ block: 'nearest' });
+  }
+};
+
+renderNet();
+})();
