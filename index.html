@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebSource Inspector Pro | Live Preview, Button Inspector & GET/POST Analyzer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Print Header -->
+  <div class="print-only print-header">
+    <div class="print-header-content">
+      <div>
+        <h1 class="print-doc-title">WEBSITE FULL SOURCE AUDIT, API & ELEMENT REPORT</h1>
+        <p class="print-meta-target" id="printTargetUrl">Target: https://example.com</p>
+      </div>
+      <div class="print-header-meta">
+        <span id="printDate">Date: 2026-10-15</span>
+        <span>WebSource Inspector Pro (Heavy Task Engine)</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header class="app-header no-print">
+    <div class="container header-container">
+      <div class="brand">
+        <div class="logo-icon">&lt;/&gt;</div>
+        <div>
+          <h1 class="brand-title">WebSource <span>Inspector Pro</span></h1>
+          <p class="brand-sub">Live Web Preview, Clickable Button Inspector & GET/POST API Extractor</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <span class="badge live-badge">● GitHub & Vercel Ready</span>
+        <button id="themeToggle" class="btn btn-icon" title="Theme Toggle">🌓</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container main-content">
+    <!-- URL Input & Multi-Web Manager -->
+    <section class="fetch-card no-print">
+      <form id="fetchForm" class="fetch-form">
+        <div class="input-group">
+          <span class="input-icon">🌐</span>
+          <input type="url" id="urlInput" placeholder="Kisi bhi website ka URL enter karein (e.g. https://httpbin.org/forms/post)" required value="https://example.com">
+          <button type="submit" id="fetchBtn" class="btn btn-primary">
+            <span class="btn-text">Website Fetch & Inspect</span>
+            <span class="spinner" id="fetchSpinner" style="display: none;"></span>
+          </button>
+        </div>
+      </form>
+
+      <!-- Saved Websites / History Bar -->
+      <div class="saved-sites-bar">
+        <span class="saved-label">⭐ Saved / Recent Websites:</span>
+        <div class="saved-chips" id="savedSitesList">
+          <!-- Dynamically populated -->
+        </div>
+        <button id="clearSitesBtn" class="btn btn-xs btn-outline" title="Clear History">Clear</button>
+      </div>
+
+      <div class="fetch-options">
+        <div class="quick-samples">
+          <span>Quick Demos:</span>
+          <button class="sample-chip" data-url="https://example.com">Example.com</button>
+          <button class="sample-chip" data-url="https://httpbin.org/forms/post">Forms (GET/POST Demo)</button>
+          <button class="sample-chip" data-url="https://news.ycombinator.com">HackerNews</button>
+        </div>
+        <div class="proxy-selector">
+          <label for="proxyMode">Fetch Engine:</label>
+          <select id="proxyMode">
+            <option value="auto">Auto (Vercel Serverless + Fallback)</option>
+            <option value="vercel">Vercel API (/api/fetch)</option>
+            <option value="corsproxy">Public CORS Proxy</option>
+          </select>
+        </div>
+      </div>
+      <div id="statusAlert" class="alert" style="display: none;"></div>
+    </section>
+
+    <!-- Metrics Cards -->
+    <section id="metricsSection" class="metrics-grid" style="display: none;">
+      <div class="metric-card">
+        <span class="metric-label">HTML Size & Lines</span>
+        <h3 class="metric-value" id="statHtmlSize">0 KB / 0 L</h3>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">Buttons & Clickables</span>
+        <h3 class="metric-value" id="statBtnCount">0 Buttons</h3>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">GET / POST Requests</span>
+        <h3 class="metric-value" id="statRequestCount">0 Forms / 0 APIs</h3>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">CSS & JS Files</span>
+        <h3 class="metric-value" id="statResourcesCount">0 CSS / 0 JS</h3>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">Fetch Status</span>
+        <h3 class="metric-value" id="statResponseTime">200 OK</h3>
+      </div>
+    </section>
+
+    <!-- Action Toolbar & Heavy Print Controls -->
+    <section id="actionToolbar" class="action-toolbar no-print" style="display: none;">
+      <div class="tab-buttons">
+        <button class="tab-btn active" data-tab="tab-buttons">🔘 Buttons & Clickables (Interactive)</button>
+        <button class="tab-btn" data-tab="tab-requests">📡 GET / POST Forms & APIs</button>
+        <button class="tab-btn" data-tab="tab-preview">🖥️ Live Web Preview</button>
+        <button class="tab-btn" data-tab="tab-html">📄 Full HTML Code</button>
+        <button class="tab-btn" data-tab="tab-css">🎨 CSS Styles</button>
+        <button class="tab-btn" data-tab="tab-js">⚡ JS Scripts</button>
+        <button class="tab-btn" data-tab="tab-overview">📊 SEO & Metadata</button>
+      </div>
+
+      <div class="toolbar-actions">
+        <div class="dropdown-container">
+          <button id="heavyPrintBtn" class="btn btn-accent">🖨️ Heavy Print Task</button>
+          <div class="dropdown-menu">
+            <button class="menu-item" data-print-mode="full">📑 Full Report + Code + GET/POST Details</button>
+            <button class="menu-item" data-print-mode="buttons">🔘 Sirf Buttons & Clickable Elements Report</button>
+            <button class="menu-item" data-print-mode="requests">📡 Sirf GET/POST Forms & APIs Audit</button>
+            <button class="menu-item" data-print-mode="code">📄 Sirf Full Source Code</button>
+          </div>
+        </div>
+        <button id="copyCodeBtn" class="btn btn-secondary">📋 Copy</button>
+        <button id="downloadHtmlBtn" class="btn btn-secondary">💾 Download</button>
+      </div>
+    </section>
+
+    <!-- Main Content Container -->
+    <div id="inspectorContent" class="inspector-box" style="display: none;">
+      
+      <!-- TAB: BUTTONS & CLICKABLE ELEMENTS (INTERACTIVE INSPECTOR) -->
+      <section id="tab-buttons" class="tab-pane active">
+        <div class="pane-header">
+          <div>
+            <h2>🔘 Interactive Buttons & Clickables Inspector</h2>
+            <p class="pane-desc">Kisi bhi button par click karein, uska HTML code, classes, parent form aur GET/POST action foran niche open ho jayega.</p>
+          </div>
+          <div class="filter-controls no-print">
+            <input type="text" id="btnFilterInput" placeholder="Button text ya tag search karein..." class="search-input">
+            <span class="badge" id="buttonsFoundBadge">0 Buttons</span>
+          </div>
+        </div>
+
+        <div class="button-inspector-layout">
+          <!-- Left: List of all interactive buttons/elements -->
+          <div class="button-list-column">
+            <div class="column-title">Page Par Mojood Buttons & Interactive Elements:</div>
+            <div id="buttonsListContainer" class="buttons-grid">
+              <!-- Buttons dynamically injected here -->
+            </div>
+          </div>
+
+          <!-- Right: Inspector Detail Panel for the clicked button -->
+          <div class="button-detail-column">
+            <div class="column-title">Selected Element Details & Source Code:</div>
+            <div id="buttonDetailPlaceholder" class="detail-empty">
+              <span>👈 Kisi bhi button par click karein uska code aur GET/POST dekhne ke liye</span>
+            </div>
+
+            <div id="buttonDetailCard" class="button-detail-card" style="display: none;">
+              <div class="detail-header">
+                <div>
+                  <span class="badge badge-primary" id="detElementType">BUTTON</span>
+                  <strong id="detElementText">Submit Query</strong>
+                </div>
+                <button id="copyElementCodeBtn" class="btn btn-xs btn-outline">📋 Copy Code</button>
+              </div>
+
+              <!-- GET/POST Method and Action Banner -->
+              <div class="request-banner" id="detRequestBanner">
+                <span class="badge badge-method" id="detMethodBadge">POST</span>
+                <span class="action-url" id="detActionUrl">Action: /api/submit</span>
+              </div>
+
+              <!-- Element Attributes Table -->
+              <div class="detail-section">
+                <h4>Element Attributes:</h4>
+                <table class="data-table" id="detAttributesTable">
+                  <thead><tr><th>Attribute</th><th>Value</th></tr></thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+
+              <!-- Element Outer HTML Code Box -->
+              <div class="detail-section">
+                <h4>Element Source Code (HTML):</h4>
+                <div class="code-snippet-box">
+                  <pre><code id="detOuterHtmlCode"></code></pre>
+                </div>
+              </div>
+
+              <!-- Associated Form / Action Data if any -->
+              <div class="detail-section" id="detFormInputsSection" style="display: none;">
+                <h4>Associated Form Input Fields (Payload):</h4>
+                <table class="data-table" id="detFormInputsTable">
+                  <thead><tr><th>Name</th><th>Type</th><th>Value</th></tr></thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: GET / POST FORMS & APIS ANALYZER -->
+      <section id="tab-requests" class="tab-pane">
+        <div class="pane-header">
+          <h2>📡 GET / POST Forms & API Endpoints Analyzer</h2>
+          <p class="pane-desc">Website ke sabhi HTML Forms (GET/POST) aur JavaScript mein mojood API fetch/ajax calls ka mukammal data.</p>
+        </div>
+
+        <div class="requests-container" id="requestsContainer">
+          <!-- Populated dynamically -->
+        </div>
+      </section>
+
+      <!-- TAB: LIVE WEB PREVIEW (नीचे लाइव वेब भी हो) -->
+      <section id="tab-preview" class="tab-pane">
+        <div class="pane-header preview-header">
+          <div>
+            <h2>🖥️ Live Website Preview</h2>
+            <p class="pane-desc">Target website ka responsive sandboxed live view.</p>
+          </div>
+          <div class="preview-controls no-print">
+            <button class="btn btn-sm btn-outline active-device" data-device="desktop">💻 Desktop</button>
+            <button class="btn btn-sm btn-outline" data-device="tablet">📱 Tablet (768px)</button>
+            <button class="btn btn-sm btn-outline" data-device="mobile">📱 Mobile (375px)</button>
+            <a id="openNewTabBtn" href="#" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">External Window ↗</a>
+          </div>
+        </div>
+
+        <div class="live-preview-wrapper" id="previewWrapper">
+          <iframe id="livePreviewFrame" sandbox="allow-scripts allow-forms allow-same-origin" src="about:blank"></iframe>
+        </div>
+      </section>
+
+      <!-- TAB: FULL HTML SOURCE CODE -->
+      <section id="tab-html" class="tab-pane">
+        <div class="pane-header code-header">
+          <div>
+            <h2>Raw HTML Source Code</h2>
+            <p class="pane-desc" id="htmlStatsDesc">0 Lines, 0 Characters</p>
+          </div>
+          <div class="code-controls no-print">
+            <input type="text" id="codeSearchInput" placeholder="Code search (Ctrl+F)..." class="search-input">
+            <span id="searchMatchesCount"></span>
+            <button id="formatHtmlBtn" class="btn btn-sm btn-outline">⚡ Beautify</button>
+            <button id="wrapCodeBtn" class="btn btn-sm btn-outline">↩️ Word Wrap</button>
+          </div>
+        </div>
+        <div class="code-viewer-container">
+          <div class="code-line-numbers" id="htmlLineNumbers"></div>
+          <pre class="code-viewer" id="htmlCodeDisplay"><code></code></pre>
+        </div>
+      </section>
+
+      <!-- TAB: CSS STYLES -->
+      <section id="tab-css" class="tab-pane">
+        <div class="pane-header"><h2>Extracted CSS Stylesheets & Inline Blocks</h2></div>
+        <div class="assets-list" id="cssListContainer"></div>
+      </section>
+
+      <!-- TAB: JAVASCRIPT SCRIPTS -->
+      <section id="tab-js" class="tab-pane">
+        <div class="pane-header"><h2>Extracted JavaScript Files & Inline Scripts</h2></div>
+        <div class="assets-list" id="jsListContainer"></div>
+      </section>
+
+      <!-- TAB: SEO & METADATA -->
+      <section id="tab-overview" class="tab-pane">
+        <div class="pane-header"><h2>SEO, OpenGraph & Heading Tree</h2></div>
+        <div class="audit-grid">
+          <div class="audit-card">
+            <div class="card-header"><h3>🏷️ Meta Tags</h3><span class="badge" id="metaCountBadge">0</span></div>
+            <div class="card-body">
+              <table class="data-table" id="metaTable">
+                <thead><tr><th>Name / Property</th><th>Content</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="audit-card">
+            <div class="card-header"><h3>📑 Heading Tree (H1-H6)</h3><span class="badge" id="headingsCountBadge">0</span></div>
+            <div class="card-body"><div id="headingsList" class="headings-tree"></div></div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Welcome Placeholder -->
+    <div id="welcomeState" class="welcome-card">
+      <div class="welcome-icon">⚡</div>
+      <h2>WebSource Inspector Pro mein Welcome!</h2>
+      <p>Kisi bhi website ka URL dalein. Uski live web preview dekhein, buttons par click karke unka code aur GET/POST request details inspect karein.</p>
+      <div class="feature-pills">
+        <span>🔘 Clickable Button Inspector</span>
+        <span>📡 Form & API GET/POST Analyzer</span>
+        <span>🖥️ Live Sandboxed Web Preview</span>
+        <span>⚡ Full HTML/CSS/JS Extractor</span>
+        <span>🖨️ Heavy Print Engine</span>
+      </div>
+    </div>
+  </main>
+
+  <footer class="print-only print-footer">
+    <span>WebSource Inspector Pro - Heavy Task Engine</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

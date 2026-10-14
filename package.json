@@ -1,0 +1,10 @@
+{
+  "name": "websource-inspector",
+  "version": "1.0.0",
+  "description": "Full HTML/CSS/JS Source Code Viewer & Heavy Print Engine",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx serve ."
+  },
+  "license": "MIT"
+}
