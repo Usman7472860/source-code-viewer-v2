@@ -547,60 +547,69 @@ function spy(cfg) {
     post({ type: 'navigate', method: 'GET', url: abs(raw), via: 'link', clickId: lastClick && lastClick.id });
   }, false);
 
-  /* Fix dynamic forms and child iframes so they never hit viewer's 404 NOT_FOUND */
-  function fixNode(root) {
-    if (!root || !root.querySelectorAll) return;
-    root.querySelectorAll('form').forEach(function (f) {
-      var rawAct = f.getAttribute('action');
-      if (!rawAct || rawAct === 'about:srcdoc' || rawAct === 'srcdoc') {
-        f.setAttribute('action', cfg.page || cfg.base || '');
-      } else {
-        f.setAttribute('action', abs(rawAct));
+  /* Safe one-pass fix for dynamic forms & child iframes (ZERO recursion / ZERO hang) */
+  var origSetAttr = Element.prototype.setAttribute;
+  function fixOneEl(el) {
+    if (!el || el.nodeType !== 1) return;
+    if (el.tagName === 'FORM') {
+      var rawAct = el.getAttribute('action');
+      var fixedAct = (!rawAct || rawAct === 'about:srcdoc' || rawAct === 'srcdoc') ? (cfg.page || cfg.base || '') : abs(rawAct);
+      if (fixedAct && fixedAct !== rawAct) {
+        try { origSetAttr.call(el, 'action', fixedAct); } catch (e) {}
       }
-    });
-    root.querySelectorAll('iframe').forEach(function (ifr) {
-      var rawSrc = ifr.getAttribute('src');
+    } else if (el.tagName === 'IFRAME') {
+      var rawSrc = el.getAttribute('src');
       if (rawSrc === '' || rawSrc === 'about:srcdoc' || rawSrc === 'srcdoc') {
-        ifr.setAttribute('src', 'about:blank');
+        if (rawSrc !== 'about:blank') {
+          try { origSetAttr.call(el, 'src', 'about:blank'); } catch (e) {}
+        }
       } else if (rawSrc && !/^(about:|javascript:|data:|blob:)/i.test(rawSrc)) {
-        var fixed = abs(rawSrc);
-        if (fixed !== rawSrc) ifr.setAttribute('src', fixed);
-      }
-    });
-  }
-  /* Hook setAttribute and iframe.src / form.action setters so dynamic embeds & modals never hit Vercel 404 */
-  try {
-    var origSetAttr = Element.prototype.setAttribute;
-    Element.prototype.setAttribute = function (name, val) {
-      var low = String(name || '').toLowerCase();
-      if ((low === 'src' || low === 'action' || low === 'href') && typeof val === 'string') {
-        if (this.tagName === 'IFRAME' && (val === '' || val === 'about:srcdoc' || val === 'srcdoc')) {
-          val = 'about:blank';
-        } else if (!/^(about:|javascript:|data:|blob:|mailto:|tel:|#)/i.test(val)) {
-          val = abs(val);
+        var fixedSrc = abs(rawSrc);
+        if (fixedSrc && fixedSrc !== rawSrc) {
+          try { origSetAttr.call(el, 'src', fixedSrc); } catch (e) {}
         }
       }
-      return origSetAttr.call(this, name, val);
-    };
-  } catch (e) {}
+    }
+  }
+  function fixNode(root) {
+    if (!root || root.nodeType !== 1) return;
+    fixOneEl(root);
+    if (root.querySelectorAll) {
+      root.querySelectorAll('form,iframe').forEach(fixOneEl);
+    }
+  }
 
-  W.addEventListener('DOMContentLoaded', function () { fixNode(D); });
+  /* Prevent SecurityError when SPA/Vite/Laravel scripts call history.pushState/replaceState inside srcdoc */
+  ['pushState', 'replaceState'].forEach(function (fn) {
+    var orig = W.history && W.history[fn];
+    if (!orig) return;
+    W.history[fn] = function (state, title, url) {
+      try { return orig.call(this, state, title); } catch (e) {}
+    };
+  });
+
+  /* Auto-hide any broken child iframe that accidentally loads a Vercel 404 NOT_FOUND page */
+  W.addEventListener('load', function (e) {
+    var t = e.target;
+    if (t && t.tagName === 'IFRAME') {
+      try {
+        var docText = t.contentDocument && t.contentDocument.body ? t.contentDocument.body.innerText : '';
+        if (docText && (docText.indexOf('NOT_FOUND') > -1 || docText.indexOf('The page could not be found') > -1)) {
+          t.style.display = 'none';
+        }
+      } catch (_) {}
+    }
+  }, true);
+
+  W.addEventListener('DOMContentLoaded', function () { fixNode(D.documentElement); });
   try {
     new MutationObserver(function (muts) {
       muts.forEach(function (m) {
-        if (m.type === 'attributes' && m.target && m.target.nodeType === 1) {
-          var t = m.target;
-          if (t.tagName === 'FORM' || t.tagName === 'IFRAME') fixNode(t.parentNode || D);
-          return;
-        }
         m.addedNodes.forEach(function (n) {
-          if (n && n.nodeType === 1) {
-            if (n.tagName === 'FORM' || n.tagName === 'IFRAME') fixNode(n.parentNode || D);
-            else fixNode(n);
-          }
+          if (n && n.nodeType === 1) fixNode(n);
         });
       });
-    }).observe(D.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'action'] });
+    }).observe(D.documentElement, { childList: true, subtree: true });
   } catch (e) {}
 
   /* Intercept location.href / location.assign / location.replace via Navigation API */
