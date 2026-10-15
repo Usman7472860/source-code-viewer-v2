@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
 API_PATTERNS = [
+    re.compile(r'https?://[^"\'\s<>]+\.(?:m3u8|mpd)(?:\?[^"\'\s<>]*)?', re.I),
     re.compile(r'https?://(?:api\.[a-zA-Z0-9_\-\.]+|[a-zA-Z0-9_\-\.]+(?:/[a-zA-Z0-9_\-\.]+)*(?:/api|/v\d+|/graphql|/rest|/ajax|/wp-json|/trpc))[a-zA-Z0-9_\-\/\?&=%#\.]*', re.I),
     re.compile(r"""["'](/(?:api|v\d+|graphql|rest|ajax|wp-json|trpc)/[a-zA-Z0-9_\-\/\?&=%#\.]*)["']""", re.I),
     re.compile(r"""\bfetch\s*\(\s*["']([^"'\)\s,]+)""", re.I),

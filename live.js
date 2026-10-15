@@ -1,7 +1,7 @@
-/* live.js: Pro Developer Preview & Network Inspector Engine
-   Website preview (sandboxed iframe), deep network traffic interception,
-   console log capturing, interactive request replayer, and multi-device preview.
-   Loaded before the main script. The main script provides window.USV. */
+/* live.js: Pro Developer Preview & Network Inspector Engine (v2.2 Live Stream Ready)
+   Website preview, Smart Hybrid (Direct + Proxy Fallback) network interception,
+   full HLS.js / MediaSource / ArrayBuffer compatibility, console log capturing,
+   interactive request replayer, and multi-device preview. */
 (function () {
 'use strict';
 
@@ -12,7 +12,7 @@ var MAX_ROWS = 500, MAX_KEEP = 2000;
 
 var NET = new Map(), ORDER = [];
 var CONSOLE_LOGS = [];
-var F = { type: 'all', q: '', click: null, viewMode: 'net' }; // viewMode: 'net' | 'console'
+var F = { type: 'all', q: '', click: null, viewMode: 'net' };
 var SEL = null, DTAB = 'headers', timer = 0;
 var last = { html: '', base: '' };
 var deviceMode = 'desk', rotated = false;
@@ -22,17 +22,26 @@ var deviceMode = 'desk', rotated = false;
 ------------------------------------------------------------------ */
 function spy(cfg) {
   var W = window, D = document;
-  var MAXB = 25000, uid = 0, rnd = Math.random().toString(36).slice(2, 7), lastClick = null;
+  var MAXB = 35000, uid = 0, rnd = Math.random().toString(36).slice(2, 7), lastClick = null;
   var nativeFetch = W.fetch ? W.fetch.bind(W) : null;
+  var OrigXHR = W.XMLHttpRequest;
 
   function post(m) { m.usv = 1; try { W.parent.postMessage(m, '*'); } catch (e) {} }
   function nid() { return rnd + (++uid); }
   function trunc(s) { s = s == null ? '' : String(s); return s.length > MAXB ? s.slice(0, MAXB) + '\n...[kata hua]' : s; }
-  function abs(u) { try { return new URL(u, D.baseURI || undefined).href; } catch (e) { return String(u); } }
-  function clickNow() { return lastClick && Date.now() - lastClick.t < 3000 ? lastClick.id : null; }
-  function hdrs(h) { var o = {}; if (h && h.forEach) h.forEach(function (v, k) { o[k] = v; }); return o; }
+  function abs(u) { try { return new URL(u, cfg.base || D.baseURI || undefined).href; } catch (e) { return String(u); } }
+  function clickNow() { return lastClick && Date.now() - lastClick.t < 5000 ? lastClick.id : null; }
+  function hdrs(h) { var o = {}; if (h && h.forEach) h.forEach(function (v, k) { o[k.toLowerCase()] = v; }); return o; }
 
-  /* In-memory storage and cookies for sandboxed frame */
+  var TEXT_RE = /^(text\/|application\/(json|javascript|x-javascript|ecmascript|xml|xhtml\+xml|x-www-form-urlencoded|graphql|ld\+json|manifest\+json|vnd\.apple\.mpegurl|x-mpegurl|dash\+xml)|audio\/(mpegurl|x-mpegurl))|\+(json|xml)$|^image\/svg\+xml$/i;
+  function isTextResource(ct, url) {
+    if (url && /\.(m3u8|mpd|vtt|srt|json|xml|txt|css|m?js)(?=$|[?#])/i.test(url)) return true;
+    if (url && /\.(ts|m4s|mp4|webm|aac|mp3|png|jpe?g|webp|gif|ico|woff2?)(?=$|[?#])/i.test(url)) return false;
+    var t = String(ct || '').split(';')[0].trim();
+    return !t || TEXT_RE.test(t);
+  }
+
+  /* Fallback in-memory storage if browser blocks sandboxed storage */
   function mem() {
     var d = {};
     return {
@@ -81,31 +90,118 @@ function spy(cfg) {
     post({ type: 'console', level: 'error', args: [e.message + (e.filename ? ' (' + e.filename + ':' + e.lineno + ')' : '')], t: Date.now() });
   });
 
-  /* Logging requests */
+  /* Logging helpers */
   function start(rec) { rec.type = 'req'; rec.phase = 'start'; rec.id = rec.id || nid(); rec.clickId = clickNow(); rec.t = Date.now(); post(rec); return rec; }
   function end(rec, extra) { extra.type = 'req'; extra.phase = 'end'; extra.id = rec.id; post(extra); }
 
-  function b64ToBytes(b) { var s = atob(b), n = s.length, a = new Uint8Array(n); for (var i = 0; i < n; i++) a[i] = s.charCodeAt(i); return a; }
+  function b64ToBytes(b) {
+    var s = atob(b), n = s.length, a = new Uint8Array(n);
+    for (var i = 0; i < n; i++) a[i] = s.charCodeAt(i);
+    return a;
+  }
 
+  /* Proxy fetch via /api/proxy */
+  function proxyNet(url, method, headers, body, noBody) {
+    return nativeFetch(cfg.proxy, {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain' },
+      body: JSON.stringify({ url: url, method: method, headers: headers, body: noBody ? null : body, page: cfg.page })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok) throw new TypeError(j.error || 'Proxy fetch failed');
+        var rawBytes = null;
+        var textBody = '';
+        if (j.encoding === 'base64') {
+          rawBytes = b64ToBytes(j.body || '');
+          if (isTextResource(j.contentType, j.finalUrl || url)) {
+            try { textBody = new TextDecoder('utf-8').decode(rawBytes); j.encoding = 'text'; j.body = textBody; } catch (e) {}
+          }
+        } else {
+          textBody = j.body || '';
+          rawBytes = new TextEncoder().encode(textBody);
+        }
+        j.rawBytes = rawBytes;
+        return j;
+      });
+  }
+
+  /* Direct browser fetch (uses user's own IP for geo-locked streams like Tamasha, CDNs, .m3u8, .ts) */
+  function directNet(url, method, headers, body, noBody) {
+    var cleanHdrs = {};
+    Object.keys(headers || {}).forEach(function (k) {
+      if (!/^(host|origin|referer|cookie|sec-.*|user-agent|content-length)$/i.test(k)) {
+        cleanHdrs[k] = headers[k];
+      }
+    });
+    return nativeFetch(url, {
+      method: method,
+      headers: Object.keys(cleanHdrs).length ? cleanHdrs : undefined,
+      body: noBody ? undefined : body,
+      mode: 'cors',
+      credentials: 'omit'
+    }).then(function (r) {
+      var ct = r.headers.get('content-type') || '';
+      var finalUrl = r.url || url;
+      var textRes = isTextResource(ct, finalUrl);
+      return r.arrayBuffer().then(function (ab) {
+        var u8 = new Uint8Array(ab);
+        var decoded = '';
+        if (textRes) {
+          try { decoded = new TextDecoder('utf-8').decode(u8); } catch (e) {}
+        }
+        var hObj = hdrs(r.headers);
+        if (!hObj['content-length']) hObj['content-length'] = String(u8.byteLength);
+        return {
+          ok: true,
+          status: r.status,
+          statusText: r.statusText || '',
+          headers: hObj,
+          encoding: textRes ? 'text' : 'binary',
+          body: textRes ? decoded : '',
+          rawBytes: u8,
+          finalUrl: finalUrl,
+          contentType: ct,
+          size: u8.byteLength
+        };
+      });
+    });
+  }
+
+  /* Smart Hybrid Request: Direct Browser First -> Automatic Proxy Fallback on CORS/403 */
   function net(kind, url, method, headers, body) {
     var rec = start({ kind: kind, method: method, url: url, reqHeaders: headers, reqBody: trunc(body) });
     var t0 = performance.now();
     var noBody = method === 'GET' || method === 'HEAD';
-    var p;
-    if (cfg.proxyOk) {
-      p = nativeFetch(cfg.proxy, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: JSON.stringify({ url: url, method: method, headers: headers, body: noBody ? null : body, page: cfg.page }) })
-        .then(function (r) { return r.json(); })
-        .then(function (j) { if (!j.ok) throw new TypeError(j.error || 'Failed to fetch'); return j; });
-    } else {
-      p = nativeFetch(url, { method: method, headers: headers, body: noBody ? undefined : body })
-        .then(function (r) {
-          return r.text().then(function (t) {
-            return { ok: true, status: r.status, statusText: r.statusText, headers: hdrs(r.headers), encoding: 'text', body: t, finalUrl: r.url || url, contentType: r.headers.get('content-type') || '', size: t.length };
-          });
-        });
-    }
+
+    var p = directNet(url, method, headers, body, noBody).then(function (j) {
+      // If direct returned 401/403 (e.g. Referer/Origin check failed) and proxy is available, try proxy
+      if ((j.status === 403 || j.status === 401) && cfg.proxyOk && !/\.(ts|m4s|mp4)(?=$|[?#])/i.test(url)) {
+        return proxyNet(url, method, headers, body, noBody).then(function (pj) {
+          return pj.status < 400 ? pj : j;
+        }, function () { return j; });
+      }
+      return j;
+    }, function (directErr) {
+      // CORS or network error on direct fetch -> seamlessly fall back to /api/proxy!
+      if (cfg.proxyOk) {
+        return proxyNet(url, method, headers, body, noBody);
+      }
+      throw directErr;
+    });
+
     return p.then(function (j) {
-      end(rec, { status: j.status, statusText: j.statusText, resHeaders: j.headers, resBody: j.encoding === 'base64' ? '[binary ' + (j.contentType || '') + ']' : trunc(j.body), size: j.size, ms: Math.round(performance.now() - t0), resType: j.contentType || '', redirected: j.finalUrl && j.finalUrl !== url ? j.finalUrl : '' });
+      var displayBody = j.encoding === 'text' ? trunc(j.body) : '[binary ' + (j.contentType || 'stream') + ' · ' + (j.size || 0) + ' B]';
+      end(rec, {
+        status: j.status,
+        statusText: j.statusText,
+        resHeaders: j.headers,
+        resBody: displayBody,
+        size: j.size,
+        ms: Math.round(performance.now() - t0),
+        resType: j.contentType || '',
+        redirected: j.finalUrl && j.finalUrl !== url ? j.finalUrl : ''
+      });
       return j;
     }, function (err) {
       end(rec, { error: String(err && err.message || err), ms: Math.round(performance.now() - t0) });
@@ -116,10 +212,12 @@ function spy(cfg) {
   function synth(j) {
     var h = new Headers();
     Object.keys(j.headers || {}).forEach(function (k) {
-      if (!/^(content-encoding|content-length|transfer-encoding|set-cookie)$/i.test(k)) { try { h.set(k, j.headers[k]); } catch (e) {} }
+      if (!/^(content-encoding|content-length|transfer-encoding|set-cookie)$/i.test(k)) {
+        try { h.set(k, j.headers[k]); } catch (e) {}
+      }
     });
     var nb = j.status === 101 || j.status === 204 || j.status === 205 || j.status === 304;
-    var body = nb ? null : (j.encoding === 'base64' ? b64ToBytes(j.body) : j.body);
+    var body = nb ? null : (j.rawBytes || j.body);
     var st = j.status >= 200 && j.status <= 599 ? j.status : 200;
     var r = new Response(body, { status: st, statusText: j.statusText || '', headers: h });
     try { Object.defineProperty(r, 'url', { value: j.finalUrl || '' }); } catch (e) {}
@@ -139,7 +237,7 @@ function spy(cfg) {
     };
   }
 
-  /* Monkey-patch XMLHttpRequest */
+  /* Full HLS.js / Video.js / Axios compatible XMLHttpRequest */
   function bodyToString(b, H) {
     if (b == null) return '';
     if (typeof b === 'string') return b;
@@ -162,21 +260,57 @@ function spy(cfg) {
     var m = 'GET', u = '', H = {}, done = false, aborted = false;
     var st = { rs: 0, status: 0, statusText: '', text: '', bytes: null, url: '', hdrs: {} };
     x.responseType = ''; x.timeout = 0; x.withCredentials = false;
+    x.UNSENT = 0; x.OPENED = 1; x.HEADERS_RECEIVED = 2; x.LOADING = 3; x.DONE = 4;
     x.upload = { addEventListener: function () {}, removeEventListener: function () {} };
     ['readystatechange', 'loadstart', 'progress', 'load', 'error', 'abort', 'timeout', 'loadend'].forEach(function (n) { x['on' + n] = null; });
-    function fire(n) {
-      var ev = new Event(n), h = x['on' + n];
-      if (typeof h === 'function') { try { h.call(x, ev); } catch (e) { setTimeout(function () { throw e; }); } }
+
+    function patchEv(ev) {
+      try { Object.defineProperty(ev, 'target', { value: x, configurable: true }); } catch (e) {}
+      try { Object.defineProperty(ev, 'currentTarget', { value: x, configurable: true }); } catch (e) {}
+      try { Object.defineProperty(ev, 'srcElement', { value: x, configurable: true }); } catch (e) {}
+      return ev;
+    }
+
+    function makeEv(n, loaded, total) {
+      var ev;
+      try {
+        ev = (n === 'progress' || n === 'load' || n === 'loadstart' || n === 'loadend') && typeof ProgressEvent === 'function'
+          ? new ProgressEvent(n, { lengthComputable: total > 0, loaded: loaded || 0, total: total || 0 })
+          : new Event(n);
+      } catch (e) { ev = new Event(n); }
+      return patchEv(ev);
+    }
+
+    function fire(n, loaded, total) {
+      var ev = makeEv(n, loaded, total), h = x['on' + n];
+      if (typeof h === 'function') {
+        try { h.call(x, ev); } catch (e) { setTimeout(function () { throw e; }); }
+      }
       et.dispatchEvent(ev);
     }
-    x.addEventListener = function (n, f, o) { et.addEventListener(n, f, o); };
-    x.removeEventListener = function (n, f, o) { et.removeEventListener(n, f, o); };
-    x.dispatchEvent = function (e) { return et.dispatchEvent(e); };
+
+    x.addEventListener = function (n, fn, o) {
+      if (typeof fn !== 'function' && (!fn || typeof fn.handleEvent !== 'function')) return;
+      var wrapped = fn._usvWrap || (fn._usvWrap = function (ev) {
+        patchEv(ev);
+        if (typeof fn === 'function') return fn.call(x, ev);
+        return fn.handleEvent(ev);
+      });
+      et.addEventListener(n, wrapped, o);
+    };
+    x.removeEventListener = function (n, fn, o) {
+      et.removeEventListener(n, (fn && fn._usvWrap) || fn, o);
+    };
+    x.dispatchEvent = function (e) { patchEv(e); return et.dispatchEvent(e); };
+
     function setRS(n) { st.rs = n; fire('readystatechange'); }
     function resp() {
       var t = x.responseType;
       if (t === 'json') { try { return JSON.parse(st.text); } catch (e) { return null; } }
-      if (t === 'arraybuffer') { var b = st.bytes || new TextEncoder().encode(st.text); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); }
+      if (t === 'arraybuffer') {
+        var b = st.bytes || new TextEncoder().encode(st.text);
+        return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+      }
       if (t === 'blob') return new Blob([st.bytes || st.text], { type: st.hdrs['content-type'] || '' });
       return st.text;
     }
@@ -189,32 +323,103 @@ function spy(cfg) {
       response: { get: resp },
       responseXML: { get: function () { return null; } }
     });
-    x.open = function (method, url) { m = String(method).toUpperCase(); u = abs(url); H = {}; done = false; aborted = false; setRS(1); };
+    x.open = function (method, url) {
+      m = String(method || 'GET').toUpperCase();
+      u = abs(url);
+      H = {}; done = false; aborted = false;
+      st.url = u;
+      setRS(1);
+    };
     x.setRequestHeader = function (k, v) { k = String(k).toLowerCase(); H[k] = H[k] ? H[k] + ', ' + v : String(v); };
     x.getResponseHeader = function (k) { var v = st.hdrs[String(k).toLowerCase()]; return v === undefined ? null : v; };
     x.getAllResponseHeaders = function () { return Object.keys(st.hdrs).map(function (k) { return k + ': ' + st.hdrs[k]; }).join('\r\n'); };
     x.overrideMimeType = function () {};
-    x.abort = function () { aborted = true; if (st.rs > 0 && !done) { done = true; st.rs = 0; fire('abort'); fire('loadend'); } };
+    x.abort = function () {
+      aborted = true;
+      if (st.rs > 0 && !done) { done = true; st.rs = 0; fire('abort', 0, 0); fire('loadend', 0, 0); }
+    };
     x.send = function (body) {
+      if (!/^https?:/i.test(u) && OrigXHR) {
+        // For blob: or data: URLs, delegate to native XHR
+        var real = new OrigXHR();
+        real.responseType = x.responseType;
+        real.open(m, u, true);
+        real.onload = function () {
+          st.status = 200; st.url = u;
+          if (x.responseType === 'arraybuffer') st.bytes = new Uint8Array(real.response);
+          else st.text = real.responseText || '';
+          var len = st.bytes ? st.bytes.byteLength : st.text.length;
+          setRS(2); setRS(3); fire('progress', len, len); setRS(4); done = true; fire('load', len, len); fire('loadend', len, len);
+        };
+        real.onerror = function () { st.rs = 4; fire('readystatechange'); done = true; fire('error', 0, 0); fire('loadend', 0, 0); };
+        real.send(body);
+        return;
+      }
       var b = bodyToString(body, H);
-      fire('loadstart');
+      fire('loadstart', 0, 0);
       net('xhr', u, m, H, b).then(function (j) {
         if (aborted) return;
         st.status = j.status; st.statusText = j.statusText || ''; st.url = j.finalUrl || u;
         st.hdrs = {};
         Object.keys(j.headers || {}).forEach(function (k) { st.hdrs[k.toLowerCase()] = j.headers[k]; });
-        if (j.encoding === 'base64') { st.bytes = b64ToBytes(j.body); st.text = ''; try { st.text = new TextDecoder().decode(st.bytes); } catch (e) {} }
-        else st.text = j.body || '';
-        setRS(2); setRS(3); setRS(4); done = true;
-        fire('load'); fire('loadend');
+        st.bytes = j.rawBytes || new TextEncoder().encode(j.body || '');
+        if (j.encoding === 'text') {
+          st.text = j.body || '';
+        } else {
+          st.text = '';
+          try { st.text = new TextDecoder().decode(st.bytes); } catch (e) {}
+        }
+        var len = st.bytes ? st.bytes.byteLength : st.text.length;
+        if (!st.hdrs['content-length']) st.hdrs['content-length'] = String(len);
+        setRS(2);
+        setRS(3);
+        fire('progress', len, len);
+        setRS(4);
+        done = true;
+        fire('load', len, len);
+        fire('loadend', len, len);
       }, function () {
         if (aborted) return;
-        st.rs = 4; fire('readystatechange'); done = true; fire('error'); fire('loadend');
+        st.rs = 4; fire('readystatechange'); done = true; fire('error', 0, 0); fire('loadend', 0, 0);
       });
     };
   }
   FakeXHR.UNSENT = 0; FakeXHR.OPENED = 1; FakeXHR.HEADERS_RECEIVED = 2; FakeXHR.LOADING = 3; FakeXHR.DONE = 4;
+  FakeXHR.prototype = { UNSENT: 0, OPENED: 1, HEADERS_RECEIVED: 2, LOADING: 3, DONE: 4 };
   if (nativeFetch && typeof EventTarget === 'function') W.XMLHttpRequest = FakeXHR;
+
+  /* Hook <video> and <audio> direct stream sources (.m3u8, .mp4, etc.) */
+  var seenMedia = {};
+  function logMediaSrc(u, tag) {
+    if (!u || /^(blob|data):/i.test(u)) return;
+    var full = abs(u);
+    if (!/^https?:/i.test(full) || seenMedia[full]) return;
+    seenMedia[full] = 1;
+    post({
+      type: 'req', phase: 'end', id: nid(), kind: 'stream', method: 'GET',
+      url: full, resType: 'video/stream', status: 200, size: 0, ms: 0,
+      resBody: 'Live Stream / Media Source (' + (tag || 'video') + '):\n' + full,
+      clickId: clickNow(), t: Date.now()
+    });
+  }
+  try {
+    if (W.HTMLMediaElement && W.HTMLMediaElement.prototype) {
+      var origPlay = W.HTMLMediaElement.prototype.play;
+      if (origPlay) {
+        W.HTMLMediaElement.prototype.play = function () {
+          try { logMediaSrc(this.currentSrc || this.src, this.tagName); } catch (e) {}
+          return origPlay.apply(this, arguments);
+        };
+      }
+      var origLoad = W.HTMLMediaElement.prototype.load;
+      if (origLoad) {
+        W.HTMLMediaElement.prototype.load = function () {
+          try { logMediaSrc(this.currentSrc || this.src, this.tagName); } catch (e) {}
+          return origLoad.apply(this, arguments);
+        };
+      }
+    }
+  } catch (e) {}
 
   /* Monkey-patch sendBeacon */
   try {
@@ -239,7 +444,7 @@ function spy(cfg) {
     }).observe({ type: 'resource', buffered: true });
   } catch (e) {}
 
-  /* Click tracking */
+  /* Click tracking (does NOT auto-hide previous network requests!) */
   function describe(el) {
     if (!el || !el.tagName) return '';
     var tag = el.tagName.toLowerCase(), s = tag;
@@ -308,6 +513,7 @@ function spy(cfg) {
 function buildPreview(html, base, runJs) {
   var doc = new DOMParser().parseFromString(html, 'text/html');
   doc.querySelectorAll('meta[http-equiv="Content-Security-Policy" i]').forEach(function (n) { n.remove(); });
+  doc.querySelectorAll('script[integrity],link[integrity]').forEach(function (n) { n.removeAttribute('integrity'); });
   var eff = base || '', be = doc.querySelector('base[href]');
   if (be) { try { eff = new URL(be.getAttribute('href'), base || undefined).href; } catch (e) {} be.remove(); }
   if (!runJs) doc.querySelectorAll('script').forEach(function (n) { n.remove(); });
@@ -375,8 +581,8 @@ function upsert(m) {
   if (m.url) e.url = str(m.url, 2000);
   if (m.reqHeaders) e.reqHeaders = obj(m.reqHeaders);
   if (m.resHeaders) e.resHeaders = obj(m.resHeaders);
-  if (m.reqBody != null) e.reqBody = str(m.reqBody, 25000);
-  if (m.resBody != null) e.resBody = str(m.resBody, 25000);
+  if (m.reqBody != null) e.reqBody = str(m.reqBody, 35000);
+  if (m.resBody != null) e.resBody = str(m.resBody, 35000);
   if (m.status != null) e.status = num(m.status);
   if (m.statusText != null) e.statusText = str(m.statusText, 80);
   if (m.size != null) e.size = num(m.size);
@@ -395,8 +601,7 @@ function addClick(m) {
   if (!id || NET.has(id)) return;
   NET.set(id, { id: id, kind: 'click', desc: str(m.desc, 120), t: m.t || Date.now() });
   ORDER.push(id); trim();
-  F.click = id;
-  SEL = null;
+  // Do NOT auto-set F.click = id so earlier API & stream requests stay visible!
   schedule();
 }
 
@@ -424,8 +629,15 @@ function nameOf(u) {
   } catch (e) { return { name: str(u, 80), host: '' }; }
 }
 
+function isStreamEntry(e) {
+  var u = (e.url || '').toLowerCase();
+  var t = (e.resType || '').toLowerCase();
+  return e.kind === 'stream' || /\.(m3u8|mpd|ts|m4s|mp4|webm|aac|mp3)(?=$|[?#])/i.test(u) || /mpegurl|dash\+xml|video\/|audio\//i.test(t);
+}
+
 function group(e) {
   var k = e.kind;
+  if (isStreamEntry(e)) return 'stream';
   if (k === 'fetch' || k === 'xhr' || k === 'beacon') return 'xhr';
   if (k === 'document') return 'doc';
   var t = (e.resType || '').toLowerCase(), u = e.url.split('?')[0].toLowerCase();
@@ -436,6 +648,12 @@ function group(e) {
 }
 
 function typeLabel(e) {
+  if (isStreamEntry(e)) {
+    if (/\.m3u8(?=$|[?#])/i.test(e.url)) return 'HLS m3u8';
+    if (/\.mpd(?=$|[?#])/i.test(e.url)) return 'DASH mpd';
+    if (/\.ts(?=$|[?#])/i.test(e.url)) return 'HLS .ts';
+    return 'stream';
+  }
   if (e.kind !== 'resource') return e.kind;
   var g = group(e);
   return g === 'other' ? (e.resType || 'other') : g;
@@ -452,17 +670,22 @@ function stClass(e) {
 function visible(e) {
   if (e.kind === 'click') return F.click ? e.id === F.click : (F.type === 'all' && !F.q);
   if (F.click && e.clickId !== F.click) return false;
-  if (F.type !== 'all' && group(e) !== F.type) return false;
+  if (F.type !== 'all') {
+    var g = group(e);
+    if (F.type === 'xhr') {
+      if (g !== 'xhr' && !(g === 'stream' && (e.kind === 'fetch' || e.kind === 'xhr'))) return false;
+    } else if (g !== F.type) return false;
+  }
   if (F.q) {
     var q = F.q.toLowerCase();
-    if ((e.url + ' ' + e.method + ' ' + (e.status == null ? '' : e.status)).toLowerCase().indexOf(q) < 0) return false;
+    if ((e.url + ' ' + e.method + ' ' + (e.status == null ? '' : e.status) + ' ' + typeLabel(e)).toLowerCase().indexOf(q) < 0) return false;
   }
   return true;
 }
 
 function rowHtml(e) {
   if (e.kind === 'click') {
-    return '<button class="nclick" type="button" data-click="' + esc(e.id) + '"><span>Click</span>' + esc(e.desc || '') + '</button>';
+    return '<button class="nclick" type="button" data-click="' + esc(e.id) + '"><span>Click</span>' + esc(e.desc || '') + ' <small style="opacity:.7;float:right">(Filter karne ke liye dabayen)</small></button>';
   }
   var n = nameOf(e.url);
   return '<button class="nrow' + (SEL === e.id ? ' sel' : '') + '" type="button" data-id="' + esc(e.id) + '" title="' + esc(e.url) + '">' +
@@ -519,7 +742,7 @@ function renderNet() {
   var more = ids.length - MAX_ROWS;
   if (more > 0) ids = ids.slice(-MAX_ROWS);
   if (!ids.length) {
-    list.innerHTML = '<p class="hint">' + (reqs ? 'Is filter mein koi request nahi.' : 'Abhi koi request nahi. Website mein kisi button ya link par click karein, uski GET aur POST requests yahan aayengi.') + '</p>';
+    list.innerHTML = '<p class="hint">' + (reqs ? 'Is filter mein koi request nahi. "Sab" chunein.' : 'Abhi koi request nahi. Website mein kisi button ya channel par click karein, uski requests aur .m3u8 streams yahan aayengi.') + '</p>';
     return;
   }
   var atBottom = list.scrollTop + list.clientHeight >= list.scrollHeight - 40;
@@ -550,7 +773,8 @@ function hdrHtml(e) {
   if (e.size) gen.push(['Size', fmtB(e.size)]);
   if (e.redirected) gen.push(['Redirected to', e.redirected]);
   if (click) gen.push(['Click se', click]);
-  return '<h4>General Info</h4>' + table(gen) +
+  return '<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="sm" type="button" data-copy="url">📋 Copy Full URL</button></div>' +
+    '<h4>General Info</h4>' + table(gen) +
     '<h4>Request Headers</h4>' + (e.kind === 'resource' ? '<p class="hint">Browser ne khud load kiya, headers dastiyab nahi.</p>' : table(pairsOf(e.reqHeaders))) +
     '<h4>Response Headers</h4>' + (e.kind === 'resource' ? '<p class="hint">Browser resources ke headers nahi dikhata.</p>' : table(pairsOf(e.resHeaders)));
 }
@@ -572,7 +796,7 @@ function resHtml(e) {
   if (e.error) return '<p class="hint">Request fail hui: ' + esc(e.error) + '</p>';
   if (!e.resBody) return '<p class="hint">' + (e.kind === 'resource' ? 'Browser ne ye resource khud load kiya, iski body save nahi hoti.' : 'Response ki body khali hai ya abhi nahi aayi.') + '</p>';
   var j = tryJson(e.resBody);
-  return '<button class="sm" type="button" data-copy="res">Copy response</button><pre>' + esc(j !== undefined ? JSON.stringify(j, null, 2) : e.resBody) + '</pre>';
+  return '<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="sm" type="button" data-copy="res">📋 Copy Response</button><button class="sm" type="button" data-copy="url">📋 Copy URL</button></div><pre>' + esc(j !== undefined ? JSON.stringify(j, null, 2) : e.resBody) + '</pre>';
 }
 
 function sq(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
@@ -691,7 +915,7 @@ function exportHar() {
   var har = {
     log: {
       version: '1.2',
-      creator: { name: 'US MODS Source Viewer Heavy Pro', version: '2.0.0' },
+      creator: { name: 'US MODS Source Viewer Heavy Pro', version: '2.2.0' },
       entries: entries
     }
   };
@@ -794,7 +1018,6 @@ var qt;
 $('#nQ').addEventListener('input', function () { var v = this.value; clearTimeout(qt); qt = setTimeout(function () { F.q = v.trim(); renderNet(); }, 140); });
 $('#nClear').addEventListener('click', reset);
 
-// Network vs Console Switcher
 var nViewSel = $('#nViewSel');
 if (nViewSel) {
   nViewSel.addEventListener('change', function () {
@@ -803,14 +1026,12 @@ if (nViewSel) {
   });
 }
 
-// HAR Export
 var bHar = $('#bHar');
 if (bHar) bHar.addEventListener('click', exportHar);
 
 $('#pvBack').addEventListener('click', function () { if (window.USV) window.USV.back(); });
 $('#pvReload').addEventListener('click', function () { if (window.USV) window.USV.reload(); });
 
-// Device Viewport Presets
 function setDevice(mode) {
   deviceMode = mode;
   document.querySelectorAll('[data-pv-dev]').forEach(function (btn) {
@@ -840,7 +1061,7 @@ window.USV_live = {
   exportHar: exportHar,
   apiList: function () {
     return ORDER.map(function (id) { return NET.get(id); }).filter(function (e) {
-      return e.kind === 'fetch' || e.kind === 'xhr' || e.kind === 'beacon' || (e.kind === 'document' && e.method !== 'GET');
+      return e.kind === 'fetch' || e.kind === 'xhr' || e.kind === 'beacon' || e.kind === 'stream' || (e.kind === 'document' && e.method !== 'GET');
     }).map(function (e) { return { id: e.id, method: e.method, url: e.url, status: e.status, error: e.error, kind: e.kind, ms: e.ms }; });
   },
   show: function (id) {

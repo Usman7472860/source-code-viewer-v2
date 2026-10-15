@@ -400,7 +400,7 @@ dialog textarea{width:100%;height:min(44dvh,340px);padding:10px;border:1px solid
         <button class="sm" id="pvRot" type="button" title="Rotate orientation" aria-pressed="false">🔄</button>
       </div>
       <div class="pvstage" id="pvStage">
-        <iframe id="frame" title="Website preview" sandbox="allow-scripts allow-forms allow-popups allow-modals" referrerpolicy="no-referrer"></iframe>
+        <iframe id="frame" title="Website preview" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-presentation" allow="autoplay; fullscreen; encrypted-media; picture-in-picture"></iframe>
         <div class="pvempty" id="pvEmpty">Upar URL daalein, website yahan khul jayegi.</div>
       </div>
     </div>
@@ -416,6 +416,7 @@ dialog textarea{width:100%;height:min(44dvh,340px);padding:10px;border:1px solid
         <select class="sm" id="nType" aria-label="Request type">
           <option value="all">Sab</option>
           <option value="xhr">Fetch / XHR</option>
+          <option value="stream">📺 Streams (m3u8 / Media)</option>
           <option value="doc">Document</option>
           <option value="js">JS</option>
           <option value="css">CSS</option>
@@ -1293,6 +1294,7 @@ var lastPyReport = null;
 var pyServerActive = false;
 
 var PY_API_PATTERNS = [
+  /https?:\/\/[^"'\s<>]+\.(?:m3u8|mpd|ts)(?:\?[^"'\s<>]*)?/gi,
   /https?:\/\/(?:api\.[a-zA-Z0-9_\-\.]+|[a-zA-Z0-9_\-\.]+(?:\/[a-zA-Z0-9_\-\.]+)*(?:\/api|\/v\d+|\/graphql|\/rest|\/ajax|\/wp-json|\/trpc))[a-zA-Z0-9_\-\/\?&=%#\.]*/gi,
   /["'`]((?:\/api|\/v\d+|\/graphql|\/rest|\/ajax|\/wp-json|\/trpc)\/[a-zA-Z0-9_\-\/\?&=%#\.]*)["'`]/gi,
   /\bfetch\s*\(\s*["'`]([^"'`\)\s,]+)["'`]/gi,
