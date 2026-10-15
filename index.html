@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>US MODS Source Viewer · Heavy Pro Developer Suite</title>
+<meta name="theme-color" content="#0d1118">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Source Viewer">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
@@ -298,6 +306,7 @@ dialog textarea{width:100%;height:min(44dvh,340px);padding:10px;border:1px solid
     <button class="btn go" id="goBtn" type="submit">Source dekho</button>
   </form>
   <div class="tools">
+    <button class="btn" id="bInstallApp" type="button" style="background:linear-gradient(135deg,#d97706,#f59e0b);color:#fff;border-color:#d97706;font:700 12.5px var(--f-code);height:36px;padding:0 12px" hidden>📲 Install App</button>
     <button class="btn py-extract" id="bFastExtract" type="button" title="Run: python3 fast_extractor.py <url> --test-apis">⚡ Fast Extract (--test-apis)</button>
     <button class="btn py-srv" id="bPyServer" type="button" title="Run: python3 server.py">🐍 Start Python Server</button>
     <button class="btn" id="bSearchAll" type="button" title="Project Search across all files (Ctrl+Shift+F)">🔍 Global Search</button>
@@ -1751,6 +1760,42 @@ var SAMPLE = [
   '  <\/script>',
   '</body>', '</html>'
 ].join('\n');
+
+
+/* ---- PWA Service Worker & Native App Install Prompt ---- */
+var deferredInstallPrompt = null;
+var bInstall = $('#bInstallApp');
+
+if ('serviceWorker' in navigator && /^https?:/.test(location.protocol)) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js').catch(function () {});
+  });
+}
+
+window.addEventListener('beforeinstallprompt', function (e) {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  if (bInstall) bInstall.hidden = false;
+});
+
+window.addEventListener('appinstalled', function () {
+  deferredInstallPrompt = null;
+  if (bInstall) bInstall.hidden = true;
+  setMsg('📲 App aapki Home Screen par install ho gayi hai!', 'ok');
+});
+
+if (bInstall) {
+  bInstall.addEventListener('click', async function () {
+    if (!deferredInstallPrompt) {
+      setMsg('Browser menu (⋮) khol kar "Install app" dabayen.', 'ok');
+      return;
+    }
+    deferredInstallPrompt.prompt();
+    try { await deferredInstallPrompt.userChoice; } catch (e) {}
+    deferredInstallPrompt = null;
+    bInstall.hidden = true;
+  });
+}
 
 /* ---- Initialize ---- */
 fillRecent();

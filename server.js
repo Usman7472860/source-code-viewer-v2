@@ -21,7 +21,7 @@ const MIME = {
   '.js': 'application/javascript; charset=utf-8',
   '.mjs': 'application/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
+  '.json': 'application/manifest+json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -79,7 +79,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, {
       'Content-Type': contentType,
       'Content-Length': stats.size,
-      'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=3600'
+      'Cache-Control': (ext === '.html' || pathname === '/sw.js' || pathname === '/manifest.json') ? 'no-cache' : 'public, max-age=3600'
     });
 
     const stream = fs.createReadStream(filePath);

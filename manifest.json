@@ -1,0 +1,47 @@
+{
+  "id": "/",
+  "name": "US MODS Source Viewer \u00b7 Heavy Pro",
+  "short_name": "Source Viewer",
+  "description": "Website source code viewer, live preview, network inspector, hardcoded API extractor & security scanner.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
+  "orientation": "any",
+  "background_color": "#0d1118",
+  "theme_color": "#0d1118",
+  "categories": [
+    "developer",
+    "utilities",
+    "productivity"
+  ],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
