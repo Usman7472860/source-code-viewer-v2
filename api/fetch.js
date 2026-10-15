@@ -1,7 +1,7 @@
 // Vercel Serverless Function: GET /api/fetch?url=https://example.com&ua=desktop
 // Fetches a public page or file on the server so the browser is not blocked by CORS.
 
-const { PRIVATE_HOST, UA, USER_AGENTS, decode, readLimited } = require('../lib/net.js');
+const { PRIVATE_HOST, UA, USER_AGENTS, decode, readLimited, fetchWithRetry } = require('../lib/net.js');
 
 const MAX_BYTES = 3.5 * 1024 * 1024; // Vercel limits a function response to about 4.5 MB
 const TIMEOUT_MS = 8000; // Vercel Hobby functions stop after about 10 seconds
@@ -37,20 +37,21 @@ module.exports = async (req, res) => {
 
   const selectedUa = USER_AGENTS[uaChoice] || USER_AGENTS.desktop;
 
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   const t0 = performance.now();
 
   try {
-    const r = await fetch(u.href, {
-      redirect: 'follow',
-      signal: ctrl.signal,
-      headers: {
-        'user-agent': selectedUa,
-        accept: 'text/html,application/xhtml+xml,text/css,application/javascript,*/*;q=0.8',
-        'accept-language': 'en-US,en;q=0.9',
+    const r = await fetchWithRetry(
+      u.href,
+      {
+        redirect: 'follow',
+        headers: {
+          'user-agent': selectedUa,
+          accept: 'text/html,application/xhtml+xml,text/css,application/javascript,*/*;q=0.8',
+          'accept-language': 'en-US,en;q=0.9',
+        },
       },
-    });
+      { retries: 2, timeoutMs: TIMEOUT_MS }
+    );
 
     const elapsedMs = Math.round(performance.now() - t0);
     const finalUrl = r.url || u.href;
@@ -84,9 +85,7 @@ module.exports = async (req, res) => {
       size: buf.length
     });
   } catch (e) {
-    const msg = e && e.name === 'AbortError' ? 'Site ne 8 second mein jawab nahi diya.' : 'Site tak pahunch nahi saka.';
+    const msg = e && e.name === 'AbortError' ? 'Site ne jawab nahi diya (retries ke baad bhi).' : 'Site tak pahunch nahi saka (retries ke baad bhi).';
     return send(502, { ok: false, error: msg });
-  } finally {
-    clearTimeout(timer);
   }
 };
