@@ -29,7 +29,28 @@ function spy(cfg) {
   function post(m) { m.usv = 1; try { W.parent.postMessage(m, '*'); } catch (e) {} }
   function nid() { return rnd + (++uid); }
   function trunc(s) { s = s == null ? '' : String(s); return s.length > MAXB ? s.slice(0, MAXB) + '\n...[kata hua]' : s; }
-  function abs(u) { try { return new URL(u, cfg.base || D.baseURI || undefined).href; } catch (e) { return String(u); } }
+  var pageUrl = null;
+  try { pageUrl = new URL(cfg.page || cfg.base); } catch (e) {}
+
+  function abs(u) {
+    u = String(u == null ? '' : u).trim();
+    if (!u || u === 'about:srcdoc' || u === 'srcdoc') return cfg.page || cfg.base || '';
+    if (u.indexOf('about:srcdoc') === 0) {
+      return (cfg.page || cfg.base || '') + u.slice('about:srcdoc'.length);
+    }
+    try {
+      var resolved = new URL(u, cfg.base || cfg.page || D.baseURI || undefined);
+      if (pageUrl) {
+        if (W.location && W.location.origin && resolved.origin === W.location.origin && !/^\/api\/(proxy|fetch|fast-scan|health)/.test(resolved.pathname)) {
+          resolved = new URL(resolved.pathname + resolved.search + resolved.hash, pageUrl.origin);
+        }
+        if (resolved.pathname === '/srcdoc' || resolved.pathname.endsWith('/srcdoc')) {
+          resolved.pathname = pageUrl.pathname;
+        }
+      }
+      return resolved.href;
+    } catch (e) { return String(u); }
+  }
   function clickNow() { return lastClick && Date.now() - lastClick.t < 5000 ? lastClick.id : null; }
   function hdrs(h) { var o = {}; if (h && h.forEach) h.forEach(function (v, k) { o[k.toLowerCase()] = v; }); return o; }
 
@@ -56,16 +77,36 @@ function spy(cfg) {
   ['localStorage', 'sessionStorage'].forEach(function (n) {
     try { W[n].getItem('x'); } catch (e) { try { Object.defineProperty(W, n, { value: mem(), configurable: true }); } catch (_) {} }
   });
-  try { void D.cookie; } catch (e) {
-    var ck = {};
-    try {
-      Object.defineProperty(D, 'cookie', {
-        configurable: true,
-        get: function () { return Object.keys(ck).map(function (k) { return k + '=' + ck[k]; }).join('; '); },
-        set: function (v) { var p = String(v).split(';')[0], i = p.indexOf('='); if (i > 0) ck[p.slice(0, i).trim()] = p.slice(i + 1); }
-      });
-    } catch (_) {}
+  var ck = {};
+  function ingestCookies(str) {
+    String(str || '').split(';').forEach(function (part) {
+      var i = part.indexOf('=');
+      if (i > 0) {
+        var k = part.slice(0, i).trim(), v = part.slice(i + 1).trim();
+        if (k) ck[k] = v;
+      }
+    });
   }
+  function getCookieStr() {
+    return Object.keys(ck).map(function (k) { return k + '=' + ck[k]; }).join('; ');
+  }
+  if (cfg.cookies) ingestCookies(cfg.cookies);
+  try {
+    if (D.cookie) ingestCookies(D.cookie);
+  } catch (e) {}
+  try {
+    Object.defineProperty(D, 'cookie', {
+      configurable: true,
+      get: function () { return getCookieStr(); },
+      set: function (v) {
+        var p = String(v).split(';')[0], i = p.indexOf('=');
+        if (i > 0) {
+          ck[p.slice(0, i).trim()] = p.slice(i + 1).trim();
+          post({ type: 'cookies', cookies: getCookieStr(), url: cfg.page || cfg.base });
+        }
+      }
+    });
+  } catch (_) {}
 
   /* Console logs capture */
   ['log', 'info', 'warn', 'error'].forEach(function (lvl) {
@@ -100,16 +141,28 @@ function spy(cfg) {
     return a;
   }
 
-  /* Proxy fetch via /api/proxy */
+  /* Proxy fetch via /api/proxy with Cookie Jar & CSRF support */
   function proxyNet(url, method, headers, body, noBody) {
+    var hCopy = Object.assign({}, headers || {});
+    if (ck['XSRF-TOKEN'] && !hCopy['x-xsrf-token']) {
+      try { hCopy['x-xsrf-token'] = decodeURIComponent(ck['XSRF-TOKEN']); } catch (e) { hCopy['x-xsrf-token'] = ck['XSRF-TOKEN']; }
+    }
+    var metaCsrf = D.querySelector && D.querySelector('meta[name="csrf-token" i]');
+    if (metaCsrf && metaCsrf.getAttribute('content') && !hCopy['x-csrf-token']) {
+      hCopy['x-csrf-token'] = metaCsrf.getAttribute('content');
+    }
     return nativeFetch(cfg.proxy, {
       method: 'POST',
       headers: { 'content-type': 'text/plain' },
-      body: JSON.stringify({ url: url, method: method, headers: headers, body: noBody ? null : body, page: cfg.page })
+      body: JSON.stringify({ url: url, method: method, headers: hCopy, body: noBody ? null : body, page: cfg.page, cookies: getCookieStr() })
     })
       .then(function (r) { return r.json(); })
       .then(function (j) {
         if (!j.ok) throw new TypeError(j.error || 'Proxy fetch failed');
+        if (j.cookies) {
+          ingestCookies(j.cookies);
+          post({ type: 'cookies', cookies: getCookieStr(), url: j.finalUrl || url });
+        }
         var rawBytes = null;
         var textBody = '';
         if (j.encoding === 'base64') {
@@ -168,27 +221,38 @@ function spy(cfg) {
     });
   }
 
-  /* Smart Hybrid Request: Direct Browser First -> Automatic Proxy Fallback on CORS/403 */
+  /* Smart Hybrid Request:
+     - POST/PUT/PATCH/DELETE and same-origin website API/Auth requests use proxyNet FIRST (so Session Cookies & CSRF work!)
+     - Live video streams (.m3u8, .ts, .mp4) & external CDNs use directNet FIRST (so Pakistani geo-locked streams work!) */
   function net(kind, url, method, headers, body) {
+    url = abs(url);
     var rec = start({ kind: kind, method: method, url: url, reqHeaders: headers, reqBody: trunc(body) });
     var t0 = performance.now();
     var noBody = method === 'GET' || method === 'HEAD';
+    var isMediaStream = /\.(m3u8|mpd|ts|m4s|mp4|webm|aac|mp3)(?=$|[?#])/i.test(url);
+    var sameHost = false;
+    try { sameHost = !!(pageUrl && new URL(url).host === pageUrl.host); } catch (e) {}
 
-    var p = directNet(url, method, headers, body, noBody).then(function (j) {
-      // If direct returned 401/403 (e.g. Referer/Origin check failed) and proxy is available, try proxy
-      if ((j.status === 403 || j.status === 401) && cfg.proxyOk && !/\.(ts|m4s|mp4)(?=$|[?#])/i.test(url)) {
-        return proxyNet(url, method, headers, body, noBody).then(function (pj) {
-          return pj.status < 400 ? pj : j;
-        }, function () { return j; });
-      }
-      return j;
-    }, function (directErr) {
-      // CORS or network error on direct fetch -> seamlessly fall back to /api/proxy!
-      if (cfg.proxyOk) {
-        return proxyNet(url, method, headers, body, noBody);
-      }
-      throw directErr;
-    });
+    var preferProxy = cfg.proxyOk && !isMediaStream && (!noBody || sameHost || Object.keys(ck).length > 0);
+    var p;
+
+    if (preferProxy) {
+      p = proxyNet(url, method, headers, body, noBody).catch(function () {
+        return directNet(url, method, headers, body, noBody);
+      });
+    } else {
+      p = directNet(url, method, headers, body, noBody).then(function (j) {
+        if ((j.status === 403 || j.status === 401 || j.status === 419) && cfg.proxyOk && !/\.(ts|m4s|mp4)(?=$|[?#])/i.test(url)) {
+          return proxyNet(url, method, headers, body, noBody).then(function (pj) {
+            return pj.status < 400 ? pj : j;
+          }, function () { return j; });
+        }
+        return j;
+      }, function (directErr) {
+        if (cfg.proxyOk) return proxyNet(url, method, headers, body, noBody);
+        throw directErr;
+      });
+    }
 
     return p.then(function (j) {
       var displayBody = j.encoding === 'text' ? trunc(j.body) : '[binary ' + (j.contentType || 'stream') + ' · ' + (j.size || 0) + ' B]';
@@ -228,8 +292,11 @@ function spy(cfg) {
   if (nativeFetch) {
     W.fetch = function (input, init) {
       var req;
-      try { req = new Request(input, init); } catch (e) { return nativeFetch(input, init); }
-      var url = req.url;
+      try {
+        var normInput = typeof input === 'string' ? abs(input) : input;
+        req = new Request(normInput, init);
+      } catch (e) { return nativeFetch(input, init); }
+      var url = abs(req.url);
       if (!/^https?:/i.test(url) || url.indexOf(cfg.proxy) === 0) return nativeFetch(input, init);
       return req.clone().text().catch(function () { return ''; }).then(function (body) {
         return net('fetch', url, req.method, hdrs(req.headers), body);
@@ -480,22 +547,93 @@ function spy(cfg) {
     post({ type: 'navigate', method: 'GET', url: abs(raw), via: 'link', clickId: lastClick && lastClick.id });
   }, false);
 
+  /* Fix dynamic forms and child iframes so they never hit viewer's 404 NOT_FOUND */
+  function fixNode(root) {
+    if (!root || !root.querySelectorAll) return;
+    root.querySelectorAll('form').forEach(function (f) {
+      var rawAct = f.getAttribute('action');
+      if (!rawAct || rawAct === 'about:srcdoc' || rawAct === 'srcdoc') {
+        f.setAttribute('action', cfg.page || cfg.base || '');
+      } else {
+        f.setAttribute('action', abs(rawAct));
+      }
+    });
+    root.querySelectorAll('iframe').forEach(function (ifr) {
+      var rawSrc = ifr.getAttribute('src');
+      if (rawSrc === '' || rawSrc === 'about:srcdoc' || rawSrc === 'srcdoc') {
+        ifr.setAttribute('src', 'about:blank');
+      } else if (rawSrc && !/^(about:|javascript:|data:|blob:)/i.test(rawSrc)) {
+        var fixed = abs(rawSrc);
+        if (fixed !== rawSrc) ifr.setAttribute('src', fixed);
+      }
+    });
+  }
+  /* Hook setAttribute and iframe.src / form.action setters so dynamic embeds & modals never hit Vercel 404 */
+  try {
+    var origSetAttr = Element.prototype.setAttribute;
+    Element.prototype.setAttribute = function (name, val) {
+      var low = String(name || '').toLowerCase();
+      if ((low === 'src' || low === 'action' || low === 'href') && typeof val === 'string') {
+        if (this.tagName === 'IFRAME' && (val === '' || val === 'about:srcdoc' || val === 'srcdoc')) {
+          val = 'about:blank';
+        } else if (!/^(about:|javascript:|data:|blob:|mailto:|tel:|#)/i.test(val)) {
+          val = abs(val);
+        }
+      }
+      return origSetAttr.call(this, name, val);
+    };
+  } catch (e) {}
+
+  W.addEventListener('DOMContentLoaded', function () { fixNode(D); });
+  try {
+    new MutationObserver(function (muts) {
+      muts.forEach(function (m) {
+        if (m.type === 'attributes' && m.target && m.target.nodeType === 1) {
+          var t = m.target;
+          if (t.tagName === 'FORM' || t.tagName === 'IFRAME') fixNode(t.parentNode || D);
+          return;
+        }
+        m.addedNodes.forEach(function (n) {
+          if (n && n.nodeType === 1) {
+            if (n.tagName === 'FORM' || n.tagName === 'IFRAME') fixNode(n.parentNode || D);
+            else fixNode(n);
+          }
+        });
+      });
+    }).observe(D.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'action'] });
+  } catch (e) {}
+
+  /* Intercept location.href / location.assign / location.replace via Navigation API */
+  try {
+    if (W.navigation && W.navigation.addEventListener) {
+      W.navigation.addEventListener('navigate', function (e) {
+        if (!e.cancelable || e.hashChange || e.downloadRequest || e.formData) return;
+        var dest = e.destination && e.destination.url ? e.destination.url : '';
+        if (!dest || /^about:srcdoc(#|$)/i.test(dest) || /^(javascript|mailto|tel|blob|data):/i.test(dest)) return;
+        var targetUrl = abs(dest);
+        if (!/^https?:/i.test(targetUrl)) return;
+        e.preventDefault();
+        post({ type: 'navigate', method: 'GET', url: targetUrl, via: 'location', clickId: clickNow() });
+      });
+    }
+  } catch (e) {}
+
   /* Intercept form submit */
   function submitForm(f, sub) {
-    var method = String((sub && sub.getAttribute && sub.getAttribute('formmethod') ? sub.formMethod : f.method) || 'get').toUpperCase();
-    var action = sub && sub.getAttribute && sub.getAttribute('formaction') ? sub.formAction : f.action;
-    action = action || D.baseURI;
+    var method = String((sub && sub.getAttribute && sub.getAttribute('formmethod') ? sub.formMethod : (f.getAttribute('method') || f.method)) || 'get').toUpperCase();
+    var rawAct = (sub && sub.getAttribute && sub.getAttribute('formaction')) || f.getAttribute('action') || '';
+    var action = abs(rawAct);
     var fd;
     try { fd = new FormData(f, sub || undefined); } catch (e) { fd = new FormData(f); }
     var qs = new URLSearchParams();
     fd.forEach(function (v, k) { qs.append(k, typeof v === 'string' ? v : (v && v.name) || ''); });
     var cid = lastClick && lastClick.id;
     if (method === 'GET') {
-      var u = new URL(action, D.baseURI || undefined);
+      var u = new URL(action, cfg.base || cfg.page || undefined);
       u.search = qs.toString();
-      post({ type: 'navigate', method: 'GET', url: u.href, via: 'form', clickId: cid });
+      post({ type: 'navigate', method: 'GET', url: u.href, via: 'form', clickId: cid, cookies: getCookieStr() });
     } else {
-      post({ type: 'navigate', method: method, url: abs(action), body: qs.toString(), headers: { 'content-type': 'application/x-www-form-urlencoded' }, via: 'form', clickId: cid });
+      post({ type: 'navigate', method: method, url: action, body: qs.toString(), headers: { 'content-type': 'application/x-www-form-urlencoded' }, via: 'form', clickId: cid, cookies: getCookieStr() });
     }
   }
   W.addEventListener('submit', function (e) {
@@ -516,9 +654,24 @@ function buildPreview(html, base, runJs) {
   doc.querySelectorAll('script[integrity],link[integrity]').forEach(function (n) { n.removeAttribute('integrity'); });
   var eff = base || '', be = doc.querySelector('base[href]');
   if (be) { try { eff = new URL(be.getAttribute('href'), base || undefined).href; } catch (e) {} be.remove(); }
+  if (eff) {
+    doc.querySelectorAll('form').forEach(function (f) {
+      var act = f.getAttribute('action');
+      if (!act) f.setAttribute('action', base || eff);
+      else { try { f.setAttribute('action', new URL(act, eff).href); } catch (e) {} }
+    });
+    doc.querySelectorAll('iframe').forEach(function (ifr) {
+      var src = ifr.getAttribute('src');
+      if (src === '') ifr.setAttribute('src', 'about:blank');
+      else if (src && !/^(about:|javascript:|data:|blob:)/i.test(src)) {
+        try { ifr.setAttribute('src', new URL(src, eff).href); } catch (e) {}
+      }
+    });
+  }
   if (!runJs) doc.querySelectorAll('script').forEach(function (n) { n.remove(); });
   var web = /^https?:/.test(location.protocol);
-  var cfg = { proxy: (web ? location.origin : '') + '/api/proxy', proxyOk: !!(web && window.USV && window.USV.apiOk()), page: base || '', base: eff };
+  var cookies = (window.USV && window.USV.getCookies && base) ? window.USV.getCookies(base) : '';
+  var cfg = { proxy: (web ? location.origin : '') + '/api/proxy', proxyOk: !!(web && window.USV && window.USV.apiOk()), page: base || '', base: eff, cookies: cookies };
   var s = doc.createElement('script');
   s.textContent = '(' + spy.toString() + ')(' + JSON.stringify(cfg).replace(/</g, '\\u003c') + ');';
   var head = doc.head;
@@ -982,7 +1135,11 @@ window.addEventListener('message', function (ev) {
   if (d.type === 'req') upsert(d);
   else if (d.type === 'click') addClick(d);
   else if (d.type === 'console') addConsole(d);
+  else if (d.type === 'cookies' && window.USV && window.USV.saveCookies) {
+    window.USV.saveCookies(d.url || last.base, str(d.cookies, 8000));
+  }
   else if (d.type === 'navigate' && window.USV) {
+    if (d.cookies && window.USV.saveCookies) window.USV.saveCookies(d.url || last.base, str(d.cookies, 8000));
     window.USV.open({ url: str(d.url, 3000), method: str(d.method || 'GET', 10), body: str(d.body, 200000), headers: obj(d.headers) });
   }
 });
