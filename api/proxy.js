@@ -1,23 +1,21 @@
 // Vercel Serverless Function: POST /api/proxy
-// Body (text/plain, JSON): { url, method, headers, body, page }
-// Sends the request from the server and returns status, headers and body as JSON.
-// The previewed website's fetch/XHR calls go through here so they work without CORS
-// and so the viewer can show every GET and POST.
+// Body (text/plain, JSON): { url, method, headers, body, page, cookies }
+// Forwards requests with full Session Cookie Jar & POST->GET Redirect support so Login forms work!
 
-const { PRIVATE_HOST, UA, isTextType, decode, readLimited } = require('../lib/net.js');
+const { PRIVATE_HOST, UA, isTextType, decode, readLimited, fetchWithCookies } = require('../lib/net.js');
 
-const TEXT_MAX = 3.5 * 1024 * 1024; // JSON response must stay under Vercel's ~4.5 MB limit
-const BIN_MAX = 2.5 * 1024 * 1024; // base64 adds a third
+const TEXT_MAX = 3.5 * 1024 * 1024;
+const BIN_MAX = 2.5 * 1024 * 1024;
 const REQ_MAX = 1024 * 1024;
 const TIMEOUT_MS = 8000;
 const METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
 const DROP =
-  /^(host|content-length|connection|keep-alive|transfer-encoding|upgrade|te|trailer|proxy-.*|cookie|accept-encoding|origin|referer|sec-.*)$/i;
+  /^(host|content-length|connection|keep-alive|transfer-encoding|upgrade|te|trailer|proxy-.*|accept-encoding|origin|referer|sec-.*)$/i;
 
 function cors(res) {
   res.setHeader('access-control-allow-origin', '*');
   res.setHeader('access-control-allow-methods', 'POST, OPTIONS');
-  res.setHeader('access-control-allow-headers', 'content-type');
+  res.setHeader('access-control-allow-headers', 'content-type, x-usv-cookies');
   res.setHeader('access-control-max-age', '86400');
 }
 
@@ -93,24 +91,24 @@ module.exports = async (req, res) => {
     headers[k.toLowerCase()] = v;
   }
   if (!headers['user-agent']) headers['user-agent'] = UA;
-  if (!headers.accept) headers.accept = '*/*';
+  if (!headers.accept) headers.accept = 'text/html,application/xhtml+xml,application/json,*/*;q=0.9';
   if (!headers['accept-language']) headers['accept-language'] = 'en-US,en;q=0.9';
   try {
-    if (spec.page) {
-      const p = new URL(String(spec.page));
-      headers.origin = p.origin;
-      headers.referer = p.href;
-    }
+    const refUrl = spec.page ? new URL(String(spec.page)) : u;
+    headers.origin = refUrl.origin;
+    headers.referer = refUrl.href;
   } catch (e) {}
+
+  const cookieIn = [spec.cookies || '', headers.cookie || ''].filter(Boolean).join('; ');
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
-    const init = { method, headers, redirect: 'follow', signal: ctrl.signal };
+    const init = { method, headers, signal: ctrl.signal };
     if (payload != null && method !== 'GET' && method !== 'HEAD') init.body = payload;
-    const r = await fetch(u.href, init);
 
-    const finalUrl = r.url || u.href;
+    const { response: r, finalUrl, cookies } = await fetchWithCookies(u.href, init, cookieIn);
+
     try {
       if (PRIVATE_HOST.test(new URL(finalUrl).hostname)) {
         return send(400, { ok: false, error: 'Redirect private address par ja raha hai.' });
@@ -133,13 +131,14 @@ module.exports = async (req, res) => {
       finalUrl,
       contentType,
       headers: outHeaders,
+      cookies,
       encoding: text ? 'text' : 'base64',
       body: text ? decode(buf, contentType) : buf.toString('base64'),
       size: buf.length,
       truncated,
     });
   } catch (e) {
-    const msg = e && e.name === 'AbortError' ? 'Site ne 8 second mein jawab nahi diya.' : 'Site tak pahunch nahi saka.';
+    const msg = e && e.name === 'AbortError' ? 'Site ne 8 second mein jawab nahi diya.' : (e && e.message) || 'Site tak pahunch nahi saka.';
     return send(502, { ok: false, error: msg });
   } finally {
     clearTimeout(timer);

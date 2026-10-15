@@ -1,10 +1,10 @@
 // Vercel Serverless Function: GET /api/fetch?url=https://example.com&ua=desktop
-// Fetches a public page or file on the server so the browser is not blocked by CORS.
+// Fetches a public page or file on the server with full Cookie Jar & Redirect support.
 
-const { PRIVATE_HOST, UA, USER_AGENTS, decode, readLimited } = require('../lib/net.js');
+const { PRIVATE_HOST, USER_AGENTS, decode, readLimited, fetchWithCookies } = require('../lib/net.js');
 
-const MAX_BYTES = 3.5 * 1024 * 1024; // Vercel limits a function response to about 4.5 MB
-const TIMEOUT_MS = 8000; // Vercel Hobby functions stop after about 10 seconds
+const MAX_BYTES = 3.5 * 1024 * 1024;
+const TIMEOUT_MS = 8000;
 
 module.exports = async (req, res) => {
   const send = (status, obj) => {
@@ -16,10 +16,12 @@ module.exports = async (req, res) => {
 
   let target = '';
   let uaChoice = 'desktop';
+  let cookieIn = '';
   try {
     const parsed = new URL(req.url, 'http://localhost');
     target = parsed.searchParams.get('url') || '';
     uaChoice = parsed.searchParams.get('ua') || 'desktop';
+    cookieIn = parsed.searchParams.get('cookies') || req.headers['x-usv-cookies'] || '';
   } catch (e) {}
 
   let u;
@@ -42,18 +44,21 @@ module.exports = async (req, res) => {
   const t0 = performance.now();
 
   try {
-    const r = await fetch(u.href, {
-      redirect: 'follow',
-      signal: ctrl.signal,
-      headers: {
-        'user-agent': selectedUa,
-        accept: 'text/html,application/xhtml+xml,text/css,application/javascript,*/*;q=0.8',
-        'accept-language': 'en-US,en;q=0.9',
+    const { response: r, finalUrl, cookies } = await fetchWithCookies(
+      u.href,
+      {
+        method: 'GET',
+        signal: ctrl.signal,
+        headers: {
+          'user-agent': selectedUa,
+          accept: 'text/html,application/xhtml+xml,text/css,application/javascript,*/*;q=0.8',
+          'accept-language': 'en-US,en;q=0.9',
+        },
       },
-    });
+      cookieIn
+    );
 
     const elapsedMs = Math.round(performance.now() - t0);
-    const finalUrl = r.url || u.href;
     try {
       if (PRIVATE_HOST.test(new URL(finalUrl).hostname)) {
         return send(400, { ok: false, error: 'Redirect private address par ja raha hai.' });
@@ -78,13 +83,14 @@ module.exports = async (req, res) => {
       finalUrl,
       contentType: r.headers.get('content-type') || '',
       headers,
+      cookies,
       truncated,
       body,
       ms: elapsedMs,
       size: buf.length
     });
   } catch (e) {
-    const msg = e && e.name === 'AbortError' ? 'Site ne 8 second mein jawab nahi diya.' : 'Site tak pahunch nahi saka.';
+    const msg = e && e.name === 'AbortError' ? 'Site ne 8 second mein jawab nahi diya.' : (e && e.message) || 'Site tak pahunch nahi saka.';
     return send(502, { ok: false, error: msg });
   } finally {
     clearTimeout(timer);
