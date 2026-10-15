@@ -4,7 +4,7 @@
 // The previewed website's fetch/XHR calls go through here so they work without CORS
 // and so the viewer can show every GET and POST.
 
-const { PRIVATE_HOST, UA, isTextType, decode, readLimited, fetchWithRetry } = require('../lib/net.js');
+const { PRIVATE_HOST, UA, isTextType, decode, readLimited } = require('../lib/net.js');
 
 const TEXT_MAX = 3.5 * 1024 * 1024; // JSON response must stay under Vercel's ~4.5 MB limit
 const BIN_MAX = 2.5 * 1024 * 1024; // base64 adds a third
@@ -103,14 +103,12 @@ module.exports = async (req, res) => {
     }
   } catch (e) {}
 
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
-    const init = { method, headers, redirect: 'follow' };
+    const init = { method, headers, redirect: 'follow', signal: ctrl.signal };
     if (payload != null && method !== 'GET' && method !== 'HEAD') init.body = payload;
-    // Only retry idempotent methods — retrying a POST/PATCH/DELETE could
-    // double-submit against the target site, which is a correctness bug,
-    // not a speed one.
-    const canRetry = method === 'GET' || method === 'HEAD';
-    const r = await fetchWithRetry(u.href, init, { retries: canRetry ? 2 : 0, timeoutMs: TIMEOUT_MS });
+    const r = await fetch(u.href, init);
 
     const finalUrl = r.url || u.href;
     try {
@@ -120,7 +118,7 @@ module.exports = async (req, res) => {
     } catch (e) {}
 
     const contentType = r.headers.get('content-type') || '';
-    const text = isTextType(contentType);
+    const text = isTextType(contentType, finalUrl || u.href);
     const { buf, truncated } = await readLimited(r, text ? TEXT_MAX : BIN_MAX);
 
     const outHeaders = {};
@@ -141,7 +139,9 @@ module.exports = async (req, res) => {
       truncated,
     });
   } catch (e) {
-    const msg = e && e.name === 'AbortError' ? 'Site ne jawab nahi diya (retries ke baad bhi).' : 'Site tak pahunch nahi saka (retries ke baad bhi).';
+    const msg = e && e.name === 'AbortError' ? 'Site ne 8 second mein jawab nahi diya.' : 'Site tak pahunch nahi saka.';
     return send(502, { ok: false, error: msg });
+  } finally {
+    clearTimeout(timer);
   }
 };

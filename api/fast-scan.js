@@ -7,6 +7,7 @@ const MAX_BYTES = 2.5 * 1024 * 1024;
 const TIMEOUT_MS = 6500;
 
 const API_PATTERNS = [
+  /https?:\/\/[^"'\s<>]+\.(?:m3u8|mpd)(?:\?[^"'\s<>]*)?/gi,
   /https?:\/\/(?:api\.[a-zA-Z0-9_\-\.]+|[a-zA-Z0-9_\-\.]+(?:\/[a-zA-Z0-9_\-\.]+)*(?:\/api|\/v\d+|\/graphql|\/rest|\/ajax|\/wp-json|\/trpc))[a-zA-Z0-9_\-\/\?&=%#\.]*/gi,
   /["'`]((?:\/api|\/v\d+|\/graphql|\/rest|\/ajax|\/wp-json|\/trpc)\/[a-zA-Z0-9_\-\/\?&=%#\.]*)["'`]/gi,
   /\bfetch\s*\(\s*["'`]([^"'`\)\s,]+)["'`]/gi,
