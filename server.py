@@ -11,14 +11,32 @@ import os
 import re
 import json
 import time
+import socket
+import gzip
+import io
+import signal
 import urllib.request
 import urllib.error
 import urllib.parse
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 PORT = int(os.environ.get("PORT", 3000))
 ROOT = os.path.dirname(os.path.abspath(__file__))
+
+# --- Heavy-load tuning ---------------------------------------------------
+# How many concurrent client connections the OS will queue before refusing
+# new ones (separate from in-flight request handling, which is threaded).
+LISTEN_BACKLOG = int(os.environ.get("LISTEN_BACKLOG", 256))
+# Per-request socket timeout so one slow/stalled client can't pin a thread
+# forever under heavy concurrent load.
+REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", 20))
+# Cap on simultaneous outbound fetches this process will issue at once
+# (across /api/fetch, /api/proxy, and page-level crawling), so a burst of
+# heavy requests can't exhaust outbound sockets or memory.
+MAX_CONCURRENT_FETCHES = int(os.environ.get("MAX_CONCURRENT_FETCHES", 24))
+_fetch_semaphore = __import__("threading").BoundedSemaphore(MAX_CONCURRENT_FETCHES)
+FETCH_RETRIES = int(os.environ.get("FETCH_RETRIES", 2))
 
 UA_MAP = {
     "desktop": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -60,17 +78,41 @@ SECRET_PATTERNS = [
     ("JWT Token", re.compile(r'\beyJ[A-Za-z0-9-_]{10,}\.[A-Za-z0-9-_]{10,}\.[A-Za-z0-9-_]{10,}\b'))
 ]
 
-def fast_fetch(url, timeout=7):
+def fast_fetch(url, timeout=7, retries=None):
+    """Fetch with a bounded concurrency gate and transient-error retries.
+
+    The semaphore keeps a burst of heavy requests (many JS files, many
+    concurrent users) from opening unbounded sockets at once. Retries only
+    kick in for network-level failures / timeouts / 5xx, never for 4xx,
+    so a bad URL still fails fast instead of being retried pointlessly.
+    """
+    if retries is None:
+        retries = FETCH_RETRIES
     req = urllib.request.Request(url, headers={"User-Agent": UA_MAP["desktop"], "Accept": "*/*"})
     t0 = time.time()
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as res:
-            data = res.read(3670016)
-            elapsed = round((time.time() - t0) * 1000)
-            charset = res.headers.get_content_charset() or "utf-8"
-            return {"ok": True, "status": res.status, "body": data.decode(charset, errors="replace"), "url": res.geturl(), "contentType": res.headers.get("Content-Type", ""), "ms": elapsed, "size": len(data)}
-    except Exception as e:
-        return {"ok": False, "status": getattr(e, "code", 0), "error": str(e), "body": "", "ms": round((time.time() - t0) * 1000)}
+    last_err = None
+    with _fetch_semaphore:
+        for attempt in range(retries + 1):
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as res:
+                    data = res.read(3670016)
+                    elapsed = round((time.time() - t0) * 1000)
+                    charset = res.headers.get_content_charset() or "utf-8"
+                    return {"ok": True, "status": res.status, "body": data.decode(charset, errors="replace"), "url": res.geturl(), "contentType": res.headers.get("Content-Type", ""), "ms": elapsed, "size": len(data)}
+            except urllib.error.HTTPError as e:
+                # 4xx/5xx reached the server. Retry 5xx only.
+                if 500 <= e.code < 600 and attempt < retries:
+                    last_err = e
+                    time.sleep(0.2 * (2 ** attempt))
+                    continue
+                return {"ok": False, "status": e.code, "error": str(e), "body": "", "ms": round((time.time() - t0) * 1000)}
+            except Exception as e:
+                last_err = e
+                if attempt < retries:
+                    time.sleep(0.2 * (2 ** attempt))
+                    continue
+                return {"ok": False, "status": getattr(e, "code", 0), "error": str(e), "body": "", "ms": round((time.time() - t0) * 1000)}
+    return {"ok": False, "status": 0, "error": str(last_err) if last_err else "unknown", "body": "", "ms": round((time.time() - t0) * 1000)}
 
 def fast_scan_url(target_url, test_apis=False):
     t0 = time.time()
@@ -142,10 +184,41 @@ def fast_scan_url(target_url, test_apis=False):
     }
 
 class USVHandler(BaseHTTPRequestHandler):
+    # ThreadingHTTPServer already runs each request on its own thread;
+    # this just bounds how long a single slow/idle client can hold one.
+    timeout = REQUEST_TIMEOUT
+    # Note: staying on HTTP/1.0 semantics (connection closes per request)
+    # rather than enabling keep-alive, since several handlers below don't
+    # set Content-Length on every path — upgrading to 1.1 without auditing
+    # every response would make non-compliant clients hang on keep-alive.
+
     def send_cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, User-Agent")
+
+    def _send_json(self, status, obj):
+        body = json.dumps(obj).encode("utf-8")
+        accept_enc = self.headers.get("Accept-Encoding", "")
+        if "gzip" in accept_enc and len(body) > 1024:
+            buf = io.BytesIO()
+            with gzip.GzipFile(fileobj=buf, mode="wb", compresslevel=6) as gz:
+                gz.write(body)
+            body = buf.getvalue()
+            self.send_response(status)
+            self.send_cors_headers()
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(status)
+            self.send_cors_headers()
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -267,10 +340,76 @@ class USVHandler(BaseHTTPRequestHandler):
 
         ext = os.path.splitext(file_path)[1].lower()
         mime = MIME_TYPES.get(ext, "application/octet-stream")
+        stat = os.stat(file_path)
+        etag = f'"{stat.st_mtime_ns:x}-{stat.st_size:x}"'
+
+        # Conditional GET — lets browsers/proxies skip re-downloading
+        # unchanged assets, which matters a lot once many clients are
+        # repeatedly loading the same large JS bundles.
+        if self.headers.get("If-None-Match") == etag:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.end_headers()
+            return
+
+        range_header = self.headers.get("Range")
+        file_size = stat.st_size
+
+        if range_header and range_header.startswith("bytes="):
+            try:
+                start_s, end_s = range_header.split("=", 1)[1].split("-", 1)
+                start = int(start_s) if start_s else 0
+                end = int(end_s) if end_s else file_size - 1
+                end = min(end, file_size - 1)
+                if start > end or start >= file_size:
+                    raise ValueError("bad range")
+                length = end - start + 1
+                self.send_response(206)
+                self.send_header("Content-Type", mime)
+                self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+                self.send_header("Accept-Ranges", "bytes")
+                self.send_header("Content-Length", str(length))
+                self.send_header("ETag", etag)
+                self.end_headers()
+                with open(file_path, "rb") as f:
+                    f.seek(start)
+                    remaining = length
+                    while remaining > 0:
+                        chunk = f.read(min(65536, remaining))
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+                        remaining -= len(chunk)
+                return
+            except (ValueError, IndexError):
+                pass  # fall through to a normal full response
+
+        accept_enc = self.headers.get("Accept-Encoding", "")
+        compressible = ext in (".html", ".js", ".mjs", ".css", ".json", ".svg", ".txt")
+
+        if compressible and "gzip" in accept_enc and file_size > 1024:
+            with open(file_path, "rb") as f:
+                raw = f.read()
+            buf = io.BytesIO()
+            with gzip.GzipFile(fileobj=buf, mode="wb", compresslevel=6) as gz:
+                gz.write(raw)
+            body = buf.getvalue()
+            self.send_response(200)
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", "no-cache" if ext == ".html" else "public, max-age=3600")
+            self.end_headers()
+            self.wfile.write(body)
+            return
 
         self.send_response(200)
         self.send_header("Content-Type", mime)
-        self.send_header("Content-Length", os.path.getsize(file_path))
+        self.send_header("Content-Length", str(file_size))
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("ETag", etag)
         self.send_header("Cache-Control", "no-cache" if ext == ".html" else "public, max-age=3600")
         self.end_headers()
 
@@ -352,19 +491,42 @@ class USVHandler(BaseHTTPRequestHandler):
 
         self.send_error(404, "Not Found")
 
+class HeavyLoadServer(ThreadingHTTPServer):
+    # Each client connection gets its own thread (ThreadingHTTPServer),
+    # daemon threads so a stuck request can't block process shutdown,
+    # and a larger accept backlog so a burst of simultaneous connections
+    # queues at the OS level instead of being refused outright.
+    daemon_threads = True
+    allow_reuse_address = True
+    request_queue_size = LISTEN_BACKLOG
+
+    def server_bind(self):
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        super().server_bind()
+
+
 def run():
     server_address = ("", PORT)
-    httpd = HTTPServer(server_address, USVHandler)
+    httpd = HeavyLoadServer(server_address, USVHandler)
+
+    def _shutdown(signum, frame):
+        print("\nShutting down gracefully...")
+        httpd.server_close()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _shutdown)
+    signal.signal(signal.SIGINT, _shutdown)
+
     print("=" * 60)
-    print(f"  🐍 US MODS Python Server Running on port {PORT}")
+    print(f"  🐍 US MODS Python Server Running on port {PORT} (threaded)")
     print(f"  🔗 Local URL: http://localhost:{PORT}")
     print(f"  ⚡ Fast Scan API: /api/fast-scan?url=<URL>&test=1")
+    print(f"  🧵 Max concurrent outbound fetches: {MAX_CONCURRENT_FETCHES}")
     print("=" * 60)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopping Python server...")
-        httpd.server_close()
+        _shutdown(None, None)
 
 if __name__ == "__main__":
     run()

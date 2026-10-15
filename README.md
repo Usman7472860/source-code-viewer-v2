@@ -67,6 +67,30 @@ python3 server.py
 
 ---
 
+## 🏋️ Heavy-Load Tuning
+
+Both servers are built for concurrent, high-volume use (many users / many
+pages at once), tunable via environment variables — defaults are safe for
+Vercel's free-tier limits, raise them when self-hosting (`server.js` /
+`server.py`):
+
+| Env var | Default | What it controls |
+| --- | --- | --- |
+| `MAX_CONCURRENT_API` | 40 (Node) | Concurrent `/api/*` requests this process will accept before returning 503 |
+| `MAX_CONCURRENT_FETCHES` | 24 | Concurrent outbound fetches (Node `lib/net.js` gate, Python semaphore) |
+| `FETCH_MAX_BYTES` | 3.5 MB | Max response size read per outbound fetch (Node) — raise freely off Vercel |
+| `FETCH_TIMEOUT_MS` | 8000 | Outbound request timeout (Node) |
+| `FETCH_RETRIES` | 2 | Retries for timeouts/5xx on outbound fetches; POST/PATCH/DELETE are never retried |
+| `LISTEN_BACKLOG` | 256 (Python) | OS-level accept queue for a burst of simultaneous connections |
+| `REQUEST_TIMEOUT` | 20s (Python) | Per-connection socket timeout so a stalled client can't pin a thread |
+| `PORT` | 3000 | Server port |
+
+Both static file servers also support gzip compression, ETag conditional
+`GET`s, and HTTP Range requests, so repeat loads and large JS bundles don't
+re-transfer unnecessarily under load. If you deploy to Vercel Pro,
+`vercel.json`'s `maxDuration` can be raised past the Hobby-tier 10s ceiling
+for slower target sites.
+
 ## 🛡️ Security & Privacy
 - Built-in SSRF protection (localhost aur private IP ranges blocked).
 - Sandboxed iframe preview.
