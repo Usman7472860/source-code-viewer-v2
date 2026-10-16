@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-US MODS Fast Python Source & Hardcoded API Extractor (v2.1)
-High-speed multi-threaded source code inspector, JS asset crawler,
-hardcoded API endpoint finder, and live API response extractor.
+US MODS Fast Python Source & Hardcoded API Extractor (Heavy Pro v2.3)
+High-speed multi-threaded source code inspector, Next.js / SPA chunk crawler,
+hardcoded API & live stream (.m3u8/.mpd) finder, and authenticated API response tester.
 """
 
 import sys
@@ -20,14 +20,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
 API_PATTERNS = [
-    re.compile(r'https?://[^"\'\s<>]+\.(?:m3u8|mpd)(?:\?[^"\'\s<>]*)?', re.I),
-    re.compile(r'https?://(?:api\.[a-zA-Z0-9_\-\.]+|[a-zA-Z0-9_\-\.]+(?:/[a-zA-Z0-9_\-\.]+)*(?:/api|/v\d+|/graphql|/rest|/ajax|/wp-json|/trpc))[a-zA-Z0-9_\-\/\?&=%#\.]*', re.I),
-    re.compile(r"""["'](/(?:api|v\d+|graphql|rest|ajax|wp-json|trpc)/[a-zA-Z0-9_\-\/\?&=%#\.]*)["']""", re.I),
-    re.compile(r"""\bfetch\s*\(\s*["']([^"'\)\s,]+)""", re.I),
-    re.compile(r"""\baxios(?:\.(?:get|post|put|delete|patch))?\s*\(\s*["']([^"'\)\s,]+)""", re.I),
-    re.compile(r"""\$\s*\.\s*(?:get|post|getJSON|ajax)\s*\([^"']*["']([^"'\)\s,]+)""", re.I),
-    re.compile(r"""\.open\s*\(\s*["'](?:GET|POST|PUT|DELETE|PATCH)["']\s*,\s*["']([^"'\)\s,]+)""", re.I),
-    re.compile(r"""(?:endpoint|apiUrl|baseURL|api_url|api_endpoint)\s*[:=]\s*["']([^"'\)\s,;]+)""", re.I)
+    re.compile(r'https?://[^"\'\s<>]+\.(?:m3u8|mpd|ts)(?:\?[^"\'\s<>]*)?', re.I),
+    re.compile(r'https?://(?:api\.[a-zA-Z0-9_\-\.]+|[a-zA-Z0-9_\-\.]+(?:/[a-zA-Z0-9_\-\.]+)*(?:/api|/v\d+|/graphql|/rest|/ajax|/wp-json|/trpc|/auth|/pair|/session))[a-zA-Z0-9_\-\/\?&=%#\.]*', re.I),
+    re.compile(r"""["'`](/(?:api|v\d+|graphql|rest|ajax|wp-json|trpc|auth|pair|session)/[a-zA-Z0-9_\-\/\?&=%#\.]*)["'`]""", re.I),
+    re.compile(r"""\bfetch\s*\(\s*["'`]([^"'`\)\s,]+)["'`]""", re.I),
+    re.compile(r"""\baxios(?:\.(?:get|post|put|delete|patch))?\s*\(\s*["'`]([^"'`\)\s,]+)["'`]""", re.I),
+    re.compile(r"""\$\s*\.\s*(?:get|post|getJSON|ajax)\s*\([^"'`]*["'`]([^"'`\)\s,]+)["'`]""", re.I),
+    re.compile(r"""\.open\s*\(\s*["'`](?:GET|POST|PUT|DELETE|PATCH)["'`]\s*,\s*["'`]([^"'`\)\s,]+)["'`]""", re.I),
+    re.compile(r"""(?:endpoint|apiUrl|baseURL|api_url|api_endpoint|streamUrl|hlsUrl)\s*[:=]\s*["'`]([^"'`\)\s,;]+)["'`]""", re.I)
 ]
 
 SECRET_PATTERNS = [
@@ -43,16 +43,71 @@ SECRET_PATTERNS = [
     ("Generic Secret Key", re.compile(r"""(?:api_key|apikey|secret_key|client_secret|auth_token)\s*[:=]\s*["']([a-zA-Z0-9_\-\.]{16,})["']""", re.I))
 ]
 
-def fetch_url(url, timeout=7):
-    req = urllib.request.Request(url, headers={
+def extract_set_cookies(headers_obj):
+    if not headers_obj:
+        return ""
+    raw_list = []
+    if hasattr(headers_obj, "get_all"):
+        raw_list = headers_obj.get_all("Set-Cookie") or []
+    elif isinstance(headers_obj, dict):
+        for k, v in headers_obj.items():
+            if k.lower() == "set-cookie":
+                raw_list.append(v)
+    pairs = []
+    for item in raw_list:
+        first = str(item).split(";")[0].strip()
+        if "=" in first:
+            pairs.append(first)
+    return "; ".join(pairs)
+
+def merge_cookies(c1, c2):
+    jar = {}
+    for src in (c1, c2):
+        for part in str(src or "").split(";"):
+            if "=" in part:
+                k, v = part.split("=", 1)
+                k = k.strip()
+                if k:
+                    jar[k] = v.strip()
+    return "; ".join(f"{k}={v}" for k, v in jar.items())
+
+def fetch_url(url, timeout=8, auth="", cookies="", referer="", extra_headers=None):
+    hdrs = {
         "User-Agent": UA,
-        "Accept": "*/*",
+        "Accept": "application/json, text/plain, text/html, */*",
         "Accept-Language": "en-US,en;q=0.9"
-    })
+    }
+    if referer:
+        hdrs["Referer"] = referer
+        try:
+            p = urllib.parse.urlparse(referer)
+            hdrs["Origin"] = f"{p.scheme}://{p.netloc}"
+        except Exception:
+            pass
+    if cookies:
+        hdrs["Cookie"] = cookies
+        for part in cookies.split(";"):
+            if "=" in part:
+                ck_name, ck_val = part.split("=", 1)
+                if ck_name.strip().upper() in ("XSRF-TOKEN", "CSRF-TOKEN", "CSRFTOKEN"):
+                    hdrs["X-XSRF-TOKEN"] = urllib.parse.unquote(ck_val.strip())
+    if auth:
+        auth_str = auth.strip()
+        if ":" in auth_str and not auth_str.lower().startswith("bearer "):
+            k, v = auth_str.split(":", 1)
+            hdrs[k.strip()] = v.strip()
+        else:
+            if not auth_str.lower().startswith(("bearer ", "basic ", "token ")):
+                auth_str = "Bearer " + auth_str
+            hdrs["Authorization"] = auth_str
+    if extra_headers:
+        hdrs.update(extra_headers)
+
+    req = urllib.request.Request(url, headers=hdrs)
     t0 = time.time()
     try:
         with urllib.request.urlopen(req, timeout=timeout) as response:
-            data = response.read()
+            data = response.read(3670016)
             elapsed_ms = round((time.time() - t0) * 1000)
             charset = response.headers.get_content_charset() or "utf-8"
             try:
@@ -64,6 +119,7 @@ def fetch_url(url, timeout=7):
                 "url": response.geturl(),
                 "status": response.status,
                 "headers": dict(response.headers),
+                "cookies": extract_set_cookies(response.headers),
                 "contentType": response.headers.get("Content-Type", ""),
                 "body": body_text,
                 "size": len(data),
@@ -72,14 +128,16 @@ def fetch_url(url, timeout=7):
     except urllib.error.HTTPError as e:
         elapsed_ms = round((time.time() - t0) * 1000)
         try:
-            err_body = e.read().decode("utf-8", errors="replace")
+            err_body = e.read(524288).decode("utf-8", errors="replace")
         except Exception:
             err_body = ""
         return {
             "ok": False,
             "url": url,
             "status": e.code,
-            "error": str(e),
+            "error": f"HTTP {e.code}: {e.reason}",
+            "cookies": extract_set_cookies(getattr(e, "headers", None)),
+            "contentType": getattr(e, "headers", {}).get("Content-Type", "") if getattr(e, "headers", None) else "",
             "body": err_body,
             "ms": elapsed_ms
         }
@@ -96,7 +154,8 @@ def fetch_url(url, timeout=7):
 
 def extract_js_links(html, base_url):
     script_re = re.compile(r"""<script[^>]+src=["']([^"']+)["']""", re.I)
-    matches = script_re.findall(html)
+    next_chunk_re = re.compile(r"""(/_next/static/(?:chunks|css)/[a-zA-Z0-9_\-\./]+\.js)""", re.I)
+    matches = script_re.findall(html) + next_chunk_re.findall(html)
     js_urls = []
     seen = set()
     for m in matches:
@@ -119,10 +178,12 @@ def scan_text_for_apis_and_secrets(text, source_name, base_url=""):
     for pat in API_PATTERNS:
         for match in pat.findall(text):
             ep = match if isinstance(match, str) else match[0]
-            ep = ep.strip().strip("\"'\\")
-            if len(ep) < 4 or re.match(r'^\.+(?:js|css|png|jpg|svg|woff2?)$', ep, re.I):
+            ep = ep.strip().strip("\"'`\\")
+            if len(ep) < 4 or re.search(r'\.(?:js|mjs|css|png|jpe?g|svg|woff2?|ico|gif|webp)(?:$|\?)', ep, re.I):
                 continue
             if not (ep.startswith("/") or ep.startswith("http://") or ep.startswith("https://")):
+                continue
+            if ep.startswith("//"):
                 continue
             full_url = urllib.parse.urljoin(base_url, ep) if base_url else ep
             if full_url not in seen_ep:
@@ -149,12 +210,12 @@ def scan_text_for_apis_and_secrets(text, source_name, base_url=""):
 
     return endpoints, secrets
 
-def test_api_endpoint(ep_info):
+def test_api_endpoint(ep_info, auth="", cookies="", referer=""):
     url = ep_info["full_url"]
     if not (url.startswith("http://") or url.startswith("https://")):
         return None
-    res = fetch_url(url, timeout=4)
-    preview = res.get("body", "")[:300].strip()
+    res = fetch_url(url, timeout=5, auth=auth, cookies=cookies, referer=referer)
+    preview = res.get("body", "")[:350].strip()
     return {
         "url": url,
         "endpoint": ep_info["endpoint"],
@@ -165,29 +226,35 @@ def test_api_endpoint(ep_info):
         "source": ep_info["source"]
     }
 
-def run_extraction(target_url, test_apis=False, max_workers=8):
+def run_extraction(target_url, test_apis=False, max_workers=8, auth="", cookies=""):
     t_start = time.time()
-    page_res = fetch_url(target_url)
-    if not page_res["ok"]:
+    page_res = fetch_url(target_url, auth=auth, cookies=cookies, referer=target_url)
+    if not page_res["ok"] and not page_res.get("body"):
         return {"ok": False, "error": f"Failed to fetch {target_url}: {page_res.get('error', 'Unknown')}"}
 
-    html = page_res["body"]
-    final_url = page_res["url"]
+    html = page_res.get("body", "")
+    final_url = page_res.get("url") or target_url
+    active_cookies = merge_cookies(cookies, page_res.get("cookies", ""))
+
     js_urls = extract_js_links(html, final_url)
     inline_scripts = extract_inline_scripts(html)
 
     all_sources = [{"name": "HTML Source", "text": html, "url": final_url}]
     for idx, sc in enumerate(inline_scripts):
-        all_sources.append({"name": f"Inline Script #{idx+1}", "text": sc, "url": final_url})
+        if sc.strip():
+            all_sources.append({"name": f"Inline Script #{idx+1}", "text": sc, "url": final_url})
 
     if js_urls:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_url = {executor.submit(fetch_url, u): u for u in js_urls[:35]}
+            future_to_url = {
+                executor.submit(fetch_url, u, 7, auth, active_cookies, final_url): u
+                for u in js_urls[:35]
+            }
             for future in as_completed(future_to_url):
                 u = future_to_url[future]
                 try:
                     r = future.result()
-                    if r["ok"]:
+                    if r.get("body"):
                         file_name = u.split("/")[-1].split("?")[0] or "script.js"
                         all_sources.append({"name": file_name, "text": r["body"], "url": u})
                 except Exception:
@@ -205,11 +272,22 @@ def run_extraction(target_url, test_apis=False, max_workers=8):
                 total_endpoints.append(ep)
         total_secrets.extend(secs)
 
+    # Auto-detect Bearer / JWT token from discovered secrets if user didn't pass --auth
+    effective_auth = auth
+    if not effective_auth:
+        for s in total_secrets:
+            if s["type"] in ("Bearer Token", "JWT Token"):
+                effective_auth = s["value"]
+                break
+
     tested_responses = []
     if test_apis and total_endpoints:
         test_targets = [ep for ep in total_endpoints if ep["full_url"].startswith("http")][:20]
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [executor.submit(test_api_endpoint, ep) for ep in test_targets]
+            futures = [
+                executor.submit(test_api_endpoint, ep, effective_auth, active_cookies, final_url)
+                for ep in test_targets
+            ]
             for f in as_completed(futures):
                 try:
                     res = f.result()
@@ -233,25 +311,34 @@ def run_extraction(target_url, test_apis=False, max_workers=8):
     }
 
 def main():
-    parser = argparse.ArgumentParser(description="US MODS Fast Python Source & Hardcoded API Extractor")
+    parser = argparse.ArgumentParser(description="US MODS Fast Python Source & Hardcoded API Extractor (v2.3)")
     parser.add_argument("url", nargs="?", help="Target website URL (e.g. https://example.com)")
     parser.add_argument("--test-apis", "-t", action="store_true", help="Speed test discovered GET endpoints and pull live responses")
+    parser.add_argument("--auth", "-a", default="", help="Bearer token or Authorization header for protected 401/403 APIs")
+    parser.add_argument("--cookie", "-k", default="", help="Session Cookie string (e.g. 'session_id=xyz')")
     parser.add_argument("--json", "-j", action="store_true", help="Output results in raw JSON format")
-    parser.add_argument("--output", "-o", help="Save output to file (JSON or TXT)")
+    parser.add_argument("--output", "-o", help="Save output to file (JSON)")
     parser.add_argument("--concurrency", "-c", type=int, default=8, help="Number of concurrent worker threads")
 
     args = parser.parse_args()
     if not args.url:
         parser.print_help()
-        print("\nExample:")
+        print("\nExamples:")
         print("  python3 fast_extractor.py https://example.com --test-apis")
+        print("  python3 fast_extractor.py https://example.com --test-apis --auth 'Bearer eyJhbG...'")
         return
 
-    url = args.url
+    url = args.url.strip()
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
 
-    result = run_extraction(url, test_apis=args.test_apis, max_workers=args.concurrency)
+    result = run_extraction(
+        url,
+        test_apis=args.test_apis,
+        max_workers=args.concurrency,
+        auth=args.auth,
+        cookies=args.cookie
+    )
 
     if args.json:
         out = json.dumps(result, indent=2)
@@ -262,6 +349,10 @@ def main():
         else:
             print(out)
         return
+
+    if not result.get("ok"):
+        print(f"\n[!] Error: {result.get('error', 'Extraction failed')}")
+        sys.exit(1)
 
     print("\n" + "=" * 65)
     print(f"  🚀 EXTRACTION COMPLETE ({result.get('duration', 0)}s)")
@@ -278,14 +369,15 @@ def main():
 
     print("\n🎯 HARDCODED API ENDPOINTS:")
     for ep in result.get("endpoints", [])[:15]:
-        print(f"  - [{ep['method']}] {ep['endpoint']}  (in {ep['source']})")
+        print(f"  - [{ep['method']}] {ep['endpoint']}  -> {ep['full_url']} (in {ep['source']})")
 
     if result.get("tested_responses"):
         print("\n⚡ LIVE API RESPONSES:")
         for tr in result["tested_responses"]:
-            print(f"  - [{tr['status']}] {tr['url'][:60]} ({tr['ms']}ms)")
+            print(f"  - [HTTP {tr['status']}] {tr['url'][:65]} ({tr['ms']}ms)")
             if tr.get("snippet"):
-                print(f"    Body: {tr['snippet'][:120]}...")
+                clean_snip = tr["snippet"].replace("\n", " ")[:120]
+                print(f"    Body: {clean_snip}...")
 
     if args.output:
         with open(args.output, "w", encoding="utf-8") as f:

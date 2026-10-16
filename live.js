@@ -22,35 +22,105 @@ var deviceMode = 'desk', rotated = false;
 ------------------------------------------------------------------ */
 function spy(cfg) {
   var W = window, D = document;
+  try { if (D.currentScript && D.currentScript.parentNode) D.currentScript.parentNode.removeChild(D.currentScript); } catch (e) {}
   var MAXB = 35000, uid = 0, rnd = Math.random().toString(36).slice(2, 7), lastClick = null;
   var nativeFetch = W.fetch ? W.fetch.bind(W) : null;
   var OrigXHR = W.XMLHttpRequest;
+  var OrigURL = W.URL;
 
   function post(m) { m.usv = 1; try { W.parent.postMessage(m, '*'); } catch (e) {} }
   function nid() { return rnd + (++uid); }
   function trunc(s) { s = s == null ? '' : String(s); return s.length > MAXB ? s.slice(0, MAXB) + '\n...[kata hua]' : s; }
   var pageUrl = null;
-  try { pageUrl = new URL(cfg.page || cfg.base); } catch (e) {}
+  try { pageUrl = new OrigURL(cfg.page || cfg.base); } catch (e) {}
+
+  function isSrcdocUrl(s) {
+    return !s || s === 'about:srcdoc' || s === 'srcdoc' || s === 'null' || s === 'about://' || s === 'about:///' || s === 'about:blank' || /^about:/i.test(s);
+  }
 
   function abs(u) {
     u = String(u == null ? '' : u).trim();
-    if (!u || u === 'about:srcdoc' || u === 'srcdoc') return cfg.page || cfg.base || '';
-    if (u.indexOf('about:srcdoc') === 0) {
-      return (cfg.page || cfg.base || '') + u.slice('about:srcdoc'.length);
+    var fb = cfg.page || cfg.base || '';
+    if (isSrcdocUrl(u)) {
+      var suf = u.replace(/^(?:about:srcdoc|about:\/\/\/?|about:blank|srcdoc)\/?/i, '');
+      if (!suf) return fb;
+      u = suf;
     }
     try {
-      var resolved = new URL(u, cfg.base || cfg.page || D.baseURI || undefined);
+      var resolved = new OrigURL(u, cfg.base || cfg.page || D.baseURI || undefined);
       if (pageUrl) {
         if (W.location && W.location.origin && resolved.origin === W.location.origin && !/^\/api\/(proxy|fetch|fast-scan|health)/.test(resolved.pathname)) {
-          resolved = new URL(resolved.pathname + resolved.search + resolved.hash, pageUrl.origin);
+          resolved = new OrigURL(resolved.pathname + resolved.search + resolved.hash, pageUrl.origin);
         }
         if (resolved.pathname === '/srcdoc' || resolved.pathname.endsWith('/srcdoc')) {
-          resolved.pathname = pageUrl.pathname;
+          resolved.pathname = pageUrl.pathname || '/';
+        } else if (resolved.pathname.indexOf('/srcdoc/') === 0) {
+          resolved.pathname = resolved.pathname.replace(/^\/srcdoc\b/, pageUrl.pathname === '/' ? '' : pageUrl.pathname) || '/';
         }
       }
       return resolved.href;
     } catch (e) { return String(u); }
   }
+
+  /* Patch window.URL so Next.js App Router / Pages Router / Vite / React Router never crash on 'about:srcdoc' or 'about://' */
+  if (OrigURL) {
+    var PatchedURL = function URL(url, base) {
+      var fb = cfg.page || cfg.base || 'https://localhost/';
+      var uStr = String(url == null ? '' : url).trim();
+      var bStr = base !== undefined ? String(base == null ? '' : base).trim() : undefined;
+      if (bStr !== undefined && isSrcdocUrl(bStr)) {
+        base = fb;
+      }
+      if (isSrcdocUrl(uStr)) {
+        var suffix = uStr.replace(/^(?:about:srcdoc|about:\/\/\/?|about:blank|srcdoc)\/?/i, '');
+        url = suffix ? abs(suffix) : fb;
+      } else if (base === undefined && /^(\/|\?|\#|\.\.?\/)/.test(uStr)) {
+        base = fb;
+      }
+      var inst;
+      try {
+        inst = base !== undefined ? new OrigURL(url, base) : new OrigURL(url);
+      } catch (err) {
+        inst = new OrigURL(uStr || '/', fb);
+      }
+      if (pageUrl) {
+        if (inst.pathname === '/srcdoc' || inst.pathname.endsWith('/srcdoc')) {
+          inst.pathname = pageUrl.pathname || '/';
+        } else if (inst.pathname.indexOf('/srcdoc/') === 0) {
+          inst.pathname = inst.pathname.replace(/^\/srcdoc\b/, pageUrl.pathname === '/' ? '' : pageUrl.pathname) || '/';
+        }
+      }
+      return inst;
+    };
+    PatchedURL.prototype = OrigURL.prototype;
+    try { Object.setPrototypeOf(PatchedURL, OrigURL); } catch (e) {}
+    ['createObjectURL', 'revokeObjectURL', 'canParse', 'parse'].forEach(function (k) {
+      if (typeof OrigURL[k] === 'function') PatchedURL[k] = OrigURL[k].bind(OrigURL);
+    });
+    W.URL = PatchedURL;
+    if (W.webkitURL) W.webkitURL = PatchedURL;
+  }
+
+  /* Prevent SecurityError in about:srcdoc when Next.js / PWA scripts touch ServiceWorker or CacheStorage */
+  try {
+    var fakeSwReg = { scope: '/', active: null, installing: null, waiting: null, update: function () { return Promise.resolve(); }, unregister: function () { return Promise.resolve(true); }, addEventListener: function () {}, removeEventListener: function () {} };
+    var fakeSwContainer = {
+      controller: null,
+      ready: new Promise(function () {}),
+      register: function () { return Promise.resolve(fakeSwReg); },
+      getRegistration: function () { return Promise.resolve(undefined); },
+      getRegistrations: function () { return Promise.resolve([]); },
+      addEventListener: function () {},
+      removeEventListener: function () {},
+      startMessages: function () {}
+    };
+    Object.defineProperty(W.navigator, 'serviceWorker', { value: fakeSwContainer, configurable: true });
+  } catch (e) {}
+  try {
+    var fakeCache = { match: function () { return Promise.resolve(undefined); }, put: function () { return Promise.resolve(); }, add: function () { return Promise.resolve(); }, addAll: function () { return Promise.resolve(); }, delete: function () { return Promise.resolve(false); }, keys: function () { return Promise.resolve([]); } };
+    var fakeCaches = { open: function () { return Promise.resolve(fakeCache); }, match: function () { return Promise.resolve(undefined); }, has: function () { return Promise.resolve(false); }, delete: function () { return Promise.resolve(false); }, keys: function () { return Promise.resolve([]); } };
+    Object.defineProperty(W, 'caches', { value: fakeCaches, configurable: true });
+  } catch (e) {}
   function clickNow() { return lastClick && Date.now() - lastClick.t < 5000 ? lastClick.id : null; }
   function hdrs(h) { var o = {}; if (h && h.forEach) h.forEach(function (v, k) { o[k.toLowerCase()] = v; }); return o; }
 
@@ -250,6 +320,11 @@ function spy(cfg) {
         return j;
       }, function (directErr) {
         if (cfg.proxyOk) return proxyNet(url, method, headers, body, noBody);
+        if (noBody && /^https?:/i.test(url)) {
+          return directNet('https://corsproxy.io/?url=' + encodeURIComponent(url), 'GET', {}, null, true).catch(function () {
+            return directNet('https://api.allorigins.win/raw?url=' + encodeURIComponent(url), 'GET', {}, null, true);
+          }).catch(function () { throw directErr; });
+        }
         throw directErr;
       });
     }
@@ -547,11 +622,16 @@ function spy(cfg) {
     post({ type: 'navigate', method: 'GET', url: abs(raw), via: 'link', clickId: lastClick && lastClick.id });
   }, false);
 
-  /* Safe one-pass fix for dynamic forms & child iframes (ZERO recursion / ZERO hang) */
+  /* Safe one-pass fix for dynamic forms, child iframes, and cross-origin scripts (ZERO recursion / ZERO hang) */
   var origSetAttr = Element.prototype.setAttribute;
   function fixOneEl(el) {
     if (!el || el.nodeType !== 1) return;
-    if (el.tagName === 'FORM') {
+    if (el.tagName === 'SCRIPT' || el.tagName === 'LINK') {
+      if (el.hasAttribute('integrity')) { try { el.removeAttribute('integrity'); } catch (e) {} }
+      if (el.hasAttribute('crossorigin') && el.getAttribute('type') !== 'module') {
+        try { el.removeAttribute('crossorigin'); } catch (e) {}
+      }
+    } else if (el.tagName === 'FORM') {
       var rawAct = el.getAttribute('action');
       var fixedAct = (!rawAct || rawAct === 'about:srcdoc' || rawAct === 'srcdoc') ? (cfg.page || cfg.base || '') : abs(rawAct);
       if (fixedAct && fixedAct !== rawAct) {
@@ -575,18 +655,149 @@ function spy(cfg) {
     if (!root || root.nodeType !== 1) return;
     fixOneEl(root);
     if (root.querySelectorAll) {
-      root.querySelectorAll('form,iframe').forEach(fixOneEl);
+      root.querySelectorAll('form,iframe,script[crossorigin],link[crossorigin],script[integrity],link[integrity]').forEach(fixOneEl);
     }
   }
 
-  /* Prevent SecurityError when SPA/Vite/Laravel scripts call history.pushState/replaceState inside srcdoc */
+  /* Prevent webpack dynamic chunks from failing CORS in about:srcdoc when setting script.crossOrigin */
+  try {
+    if (W.HTMLScriptElement && W.HTMLScriptElement.prototype) {
+      Object.defineProperty(W.HTMLScriptElement.prototype, 'crossOrigin', {
+        configurable: true,
+        get: function () { return null; },
+        set: function () {}
+      });
+    }
+  } catch (e) {}
+
+  /* Prevent SecurityError when Next.js / SPA scripts call history.pushState/replaceState inside srcdoc & preserve history.state */
+  var currentHistoryState = null;
+  var lastSpaUrl = '';
   ['pushState', 'replaceState'].forEach(function (fn) {
     var orig = W.history && W.history[fn];
     if (!orig) return;
     W.history[fn] = function (state, title, url) {
+      if (state !== undefined) currentHistoryState = state;
+      if (url != null && String(url).trim()) {
+        var resolvedUrl = abs(url);
+        if (/^https?:/i.test(resolvedUrl)) {
+          lastSpaUrl = resolvedUrl;
+          cfg.page = resolvedUrl;
+          try { pageUrl = new OrigURL(resolvedUrl); } catch (e) {}
+        }
+      }
       try { return orig.call(this, state, title); } catch (e) {}
     };
   });
+  try {
+    var nativeStateDesc = Object.getOwnPropertyDescriptor(History.prototype, 'state');
+    Object.defineProperty(W.history, 'state', {
+      configurable: true,
+      get: function () {
+        if (currentHistoryState !== null) return currentHistoryState;
+        try { return nativeStateDesc && nativeStateDesc.get ? nativeStateDesc.get.call(this) : null; } catch (e) { return null; }
+      }
+    });
+  } catch (e) {}
+
+  /* Automatic SSR DOM Snapshot Recovery:
+     If Next.js / React / Nuxt throws "Application error: a client-side exception has occurred"
+     or wipes the body blank during client hydration in srcdoc, immediately restore the SSR DOM! */
+  var ssrRecovered = false;
+  var recoverTimer = 0;
+  function isClientCrashScreen() {
+    if (!D.body) return false;
+    var txt = String(D.body.innerText || D.body.textContent || '').trim();
+    if (/Application error:\s*a client-side exception has occurred/i.test(txt)) return true;
+    if (/Unhandled Runtime Error/i.test(txt) && txt.length < 800) return true;
+    if (/Minified React error #\d+/i.test(txt) && txt.length < 800) return true;
+    if (cfg.ssrBody && cfg.ssrBody.length > 180 && txt.length === 0 && !D.body.querySelector('canvas,video,iframe,svg,img,input,button,a')) {
+      return true;
+    }
+    return false;
+  }
+
+  function checkAndRecoverSsr() {
+    if (!D.body || !isClientCrashScreen()) return;
+    /* If user just clicked something that triggered a SPA route push (e.g. /login) and client hydration crashed, navigate to the new URL! */
+    if (lastSpaUrl && lastClick && Date.now() - lastClick.t < 3500 && lastSpaUrl !== (cfg.initialPage || '')) {
+      var navTarget = lastSpaUrl;
+      lastSpaUrl = '';
+      post({ type: 'navigate', method: 'GET', url: navTarget, via: 'spa-recovery', clickId: lastClick.id });
+      return;
+    }
+    if (!cfg.ssrBody) return;
+    try {
+      if (cfg.ssrHtmlClass && !D.documentElement.className) D.documentElement.className = cfg.ssrHtmlClass;
+      if (cfg.ssrHtmlStyle && !D.documentElement.getAttribute('style')) D.documentElement.setAttribute('style', cfg.ssrHtmlStyle);
+      if (cfg.ssrBodyClass) D.body.className = cfg.ssrBodyClass;
+      if (cfg.ssrBodyStyle) D.body.setAttribute('style', cfg.ssrBodyStyle);
+      D.body.innerHTML = cfg.ssrBody;
+      if (!D.getElementById('__usv_ssr_reveal__')) {
+        var st = D.createElement('style');
+        st.id = '__usv_ssr_reveal__';
+        st.textContent = '[style*="opacity:0"],[style*="opacity: 0"]{opacity:1!important;transform:none!important}[style*="visibility:hidden"],[style*="visibility: hidden"]{visibility:visible!important}';
+        (D.head || D.documentElement).appendChild(st);
+      }
+      fixNode(D.body);
+      if (!ssrRecovered) {
+        ssrRecovered = true;
+        post({ type: 'console', level: 'warn', args: ['[USV Auto-Recovery] Next.js/SPA client-side exception intercepted — SSR Website UI restored cleanly!'], t: Date.now() });
+      }
+    } catch (e) {}
+  }
+
+  function scheduleSsrCheck(delay) {
+    clearTimeout(recoverTimer);
+    recoverTimer = setTimeout(checkAndRecoverSsr, delay || 25);
+  }
+
+  W.addEventListener('error', function () { scheduleSsrCheck(20); });
+  W.addEventListener('unhandledrejection', function () { scheduleSsrCheck(20); });
+
+  /* If SSR Recovery ran and user clicks a React <button> (e.g. "Get Started", "Sign In", "Login"), route to matching link or path */
+  W.addEventListener('click', function (e) {
+    if (!ssrRecovered || e.defaultPrevented) return;
+    var btn = e.target && e.target.closest ? e.target.closest('button,[role="button"]') : null;
+    if (!btn || btn.closest('a[href]') || (btn.tagName === 'BUTTON' && btn.type === 'submit' && btn.closest('form'))) return;
+    var explicitUrl = btn.getAttribute('data-href') || btn.getAttribute('data-url') || btn.getAttribute('formaction');
+    if (explicitUrl) {
+      e.preventDefault();
+      post({ type: 'navigate', method: 'GET', url: abs(explicitUrl), via: 'button', clickId: lastClick && lastClick.id });
+      return;
+    }
+    var label = String(btn.textContent || btn.getAttribute('aria-label') || '').trim().toLowerCase();
+    if (!label) return;
+    var links = Array.prototype.slice.call(D.querySelectorAll('a[href]'));
+    for (var i = 0; i < links.length; i++) {
+      var ltxt = String(links[i].textContent || '').trim().toLowerCase();
+      var lhref = links[i].getAttribute('href') || '';
+      if (ltxt && ltxt === label && lhref && lhref.charAt(0) !== '#') {
+        e.preventDefault();
+        post({ type: 'navigate', method: 'GET', url: abs(lhref), via: 'button-match', clickId: lastClick && lastClick.id });
+        return;
+      }
+    }
+    var slugMap = [
+      [/sign\s*in|log\s*in|login/i, '/login'],
+      [/sign\s*up|register|get\s*started|start\s*now/i, '/login'],
+      [/dashboard|panel|console/i, '/dashboard'],
+      [/pricing|plans/i, '/pricing'],
+      [/docs|documentation/i, '/docs']
+    ];
+    for (var j = 0; j < slugMap.length; j++) {
+      if (slugMap[j][0].test(label)) {
+        var candidateHref = slugMap[j][1];
+        for (var k = 0; k < links.length; k++) {
+          var h = links[k].getAttribute('href') || '';
+          if (h.toLowerCase().indexOf(candidateHref) > -1) { candidateHref = h; break; }
+        }
+        e.preventDefault();
+        post({ type: 'navigate', method: 'GET', url: abs(candidateHref), via: 'button-route', clickId: lastClick && lastClick.id });
+        return;
+      }
+    }
+  }, false);
 
   /* Auto-hide any broken child iframe that accidentally loads a Vercel 404 NOT_FOUND page */
   W.addEventListener('load', function (e) {
@@ -599,28 +810,46 @@ function spy(cfg) {
         }
       } catch (_) {}
     }
+    scheduleSsrCheck(40);
   }, true);
 
-  W.addEventListener('DOMContentLoaded', function () { fixNode(D.documentElement); });
+  W.addEventListener('DOMContentLoaded', function () {
+    fixNode(D.documentElement);
+    scheduleSsrCheck(30);
+    setTimeout(checkAndRecoverSsr, 250);
+    setTimeout(checkAndRecoverSsr, 900);
+    setTimeout(checkAndRecoverSsr, 2200);
+  });
   try {
     new MutationObserver(function (muts) {
+      var bodyChanged = false;
       muts.forEach(function (m) {
+        if (m.target === D.body || m.target === D.documentElement || (m.removedNodes && m.removedNodes.length)) {
+          bodyChanged = true;
+        }
         m.addedNodes.forEach(function (n) {
-          if (n && n.nodeType === 1) fixNode(n);
+          if (n && n.nodeType === 1) {
+            fixNode(n);
+            bodyChanged = true;
+          }
         });
       });
+      if (bodyChanged) scheduleSsrCheck(20);
     }).observe(D.documentElement, { childList: true, subtree: true });
   } catch (e) {}
 
-  /* Intercept location.href / location.assign / location.replace via Navigation API */
+  /* Intercept user-triggered location.href / location.assign / location.replace via Navigation API (never abort initial Next.js replaceState) */
   try {
     if (W.navigation && W.navigation.addEventListener) {
       W.navigation.addEventListener('navigate', function (e) {
         if (!e.cancelable || e.hashChange || e.downloadRequest || e.formData) return;
+        if (e.navigationType === 'replace' && !e.userInitiated && !(lastClick && Date.now() - lastClick.t < 2500)) return;
         var dest = e.destination && e.destination.url ? e.destination.url : '';
         if (!dest || /^about:srcdoc(#|$)/i.test(dest) || /^(javascript|mailto|tel|blob|data):/i.test(dest)) return;
+        if (/\/srcdoc(\?|$)/.test(dest) && !e.userInitiated) return;
         var targetUrl = abs(dest);
         if (!/^https?:/i.test(targetUrl)) return;
+        if (!e.userInitiated && !(lastClick && Date.now() - lastClick.t < 2500) && targetUrl === (cfg.page || cfg.base)) return;
         e.preventDefault();
         post({ type: 'navigate', method: 'GET', url: targetUrl, via: 'location', clickId: clickNow() });
       });
@@ -661,6 +890,11 @@ function buildPreview(html, base, runJs) {
   var doc = new DOMParser().parseFromString(html, 'text/html');
   doc.querySelectorAll('meta[http-equiv="Content-Security-Policy" i]').forEach(function (n) { n.remove(); });
   doc.querySelectorAll('script[integrity],link[integrity]').forEach(function (n) { n.removeAttribute('integrity'); });
+  doc.querySelectorAll('script[crossorigin],link[crossorigin]').forEach(function (n) {
+    if (n.tagName !== 'SCRIPT' || n.getAttribute('type') !== 'module') {
+      n.removeAttribute('crossorigin');
+    }
+  });
   var eff = base || '', be = doc.querySelector('base[href]');
   if (be) { try { eff = new URL(be.getAttribute('href'), base || undefined).href; } catch (e) {} be.remove(); }
   if (eff) {
@@ -677,10 +911,59 @@ function buildPreview(html, base, runJs) {
       }
     });
   }
+
+  /* Capture clean Server-Side Rendered (SSR) snapshot before client scripts execute */
+  var ssrBody = '', ssrBodyClass = '', ssrBodyStyle = '', ssrHtmlClass = '', ssrHtmlStyle = '';
+  if (doc.body) {
+    try {
+      var clone = doc.body.cloneNode(true);
+      clone.querySelectorAll('script,noscript,template').forEach(function (n) { n.remove(); });
+      var rawSsr = clone.innerHTML.trim();
+      if (rawSsr.length > 40 && !/Application error:\s*a client-side exception has occurred/i.test(rawSsr)) {
+        ssrBody = rawSsr;
+        ssrBodyClass = doc.body.className || '';
+        ssrBodyStyle = doc.body.getAttribute('style') || '';
+        ssrHtmlClass = doc.documentElement.className || '';
+        ssrHtmlStyle = doc.documentElement.getAttribute('style') || '';
+      }
+    } catch (e) {}
+  }
+
+  /* Inject already-fetched external CSS inline as fallback so CORS/CORP never leaves the page unstyled */
+  if (window.USV && window.USV.extCss) {
+    try {
+      var cssList = window.USV.extCss() || [];
+      cssList.forEach(function (c) {
+        if (!c || !c.text || c.failed) return;
+        var st = doc.createElement('style');
+        st.setAttribute('data-usv-css', c.url || '');
+        var fixedCss = c.text.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi, function (m, q, u) {
+          u = u.trim();
+          if (/^(data:|blob:|https?:|#)/i.test(u)) return m;
+          try { return 'url("' + new URL(u, c.url || eff).href + '")'; } catch (e) { return m; }
+        });
+        st.textContent = fixedCss;
+        doc.head.appendChild(st);
+      });
+    } catch (e) {}
+  }
+
   if (!runJs) doc.querySelectorAll('script').forEach(function (n) { n.remove(); });
   var web = /^https?:/.test(location.protocol);
   var cookies = (window.USV && window.USV.getCookies && base) ? window.USV.getCookies(base) : '';
-  var cfg = { proxy: (web ? location.origin : '') + '/api/proxy', proxyOk: !!(web && window.USV && window.USV.apiOk()), page: base || '', base: eff, cookies: cookies };
+  var cfg = {
+    proxy: (web ? location.origin : '') + '/api/proxy',
+    proxyOk: !!(web && window.USV && window.USV.apiOk()),
+    page: base || '',
+    initialPage: base || '',
+    base: eff,
+    cookies: cookies,
+    ssrBody: ssrBody,
+    ssrBodyClass: ssrBodyClass,
+    ssrBodyStyle: ssrBodyStyle,
+    ssrHtmlClass: ssrHtmlClass,
+    ssrHtmlStyle: ssrHtmlStyle
+  };
   var s = doc.createElement('script');
   s.textContent = '(' + spy.toString() + ')(' + JSON.stringify(cfg).replace(/</g, '\\u003c') + ');';
   var head = doc.head;

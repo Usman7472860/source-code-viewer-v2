@@ -1042,6 +1042,7 @@ window.USV = {
   },
   apiOk: function () { return apiMode === 'api'; },
   runJs: function () { return $('#optJs').checked; },
+  extCss: function () { return (S.sources || []).filter(function (s) { return s.type === 'css' && s.kind === 'external' && !s.failed && s.text; }); },
   getCookies: getCookiesFor,
   saveCookies: saveCookiesFor,
   netChanged: function () {

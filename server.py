@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-US MODS Source Viewer - Standalone Python Server (v2.0)
-Full Python HTTP server providing web UI, API proxy, CORS bypass,
-and high-speed hardcoded API extraction.
-Zero external dependencies required (uses standard library).
+US MODS Source Viewer - Standalone Multi-Threaded Python Server (Heavy Pro v2.3)
+Full Python HTTP server providing web UI, API proxy, Cookie Jar & CSRF forwarding,
+base64 binary streaming, and high-speed hardcoded API extraction.
+Zero external dependencies required (uses Python standard library).
 """
 
 import sys
@@ -11,13 +12,15 @@ import os
 import re
 import json
 import time
+import base64
 import urllib.request
 import urllib.error
 import urllib.parse
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
-PORT = int(os.environ.get("PORT", 3000))
+from fast_extractor import run_extraction, extract_set_cookies
+
+PORT = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else int(os.environ.get("PORT", 3000))
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
 UA_MAP = {
@@ -26,7 +29,10 @@ UA_MAP = {
     "bot": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
 }
 
-PRIVATE_HOST_RE = re.compile(r'^(localhost|.*\.localhost|.*\.local|.*\.internal|0\.0\.0\.0|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|169\.254\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|\[?::1?\]?)$', re.I)
+PRIVATE_HOST_RE = re.compile(
+    r'^(localhost|.*\.localhost|.*\.local|.*\.internal|0\.0\.0\.0|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|169\.254\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|\[?::1?\]?)$',
+    re.I
+)
 
 MIME_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -34,6 +40,7 @@ MIME_TYPES = {
     ".mjs": "application/javascript; charset=utf-8",
     ".css": "text/css; charset=utf-8",
     ".json": "application/json; charset=utf-8",
+    ".webmanifest": "application/manifest+json; charset=utf-8",
     ".svg": "image/svg+xml",
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -43,110 +50,37 @@ MIME_TYPES = {
     ".txt": "text/plain; charset=utf-8"
 }
 
-API_PATTERNS = [
-    re.compile(r'https?://[^"\'\s<>]+\.(?:m3u8|mpd)(?:\?[^"\'\s<>]*)?', re.I),
-    re.compile(r'https?://[a-zA-Z0-9_\-\.]+(?:/[a-zA-Z0-9_\-\.]+)*(?:/api|/v\d+|/graphql|/rest|/ajax|/wp-json|/trpc)[a-zA-Z0-9_\-\/\?&=%#\.]*', re.I),
-    re.compile(r"""["'](/(?:api|v\d+|graphql|rest|ajax|wp-json|trpc)/[a-zA-Z0-9_\-\/\?&=%#\.]*)["']""", re.I),
-    re.compile(r"""\bfetch\s*\(\s*["']([^"'\)\s,]+)""", re.I),
-    re.compile(r"""\baxios(?:\.(?:get|post|put|delete|patch))?\s*\(\s*["']([^"'\)\s,]+)""", re.I),
-    re.compile(r"""\$\s*\.\s*(?:get|post|getJSON|ajax)\s*\([^"']*["']([^"'\)\s,]+)""", re.I),
-    re.compile(r"""\.open\s*\(\s*["'](?:GET|POST|PUT|DELETE|PATCH)["']\s*,\s*["']([^"'\)\s,]+)""", re.I),
-]
+TEXT_MIME_RE = re.compile(
+    r'^(text/|application/(json|javascript|x-javascript|ecmascript|xml|xhtml\+xml|x-www-form-urlencoded|graphql|ld\+json|manifest\+json|vnd\.apple\.mpegurl|x-mpegurl|dash\+xml)|audio/(mpegurl|x-mpegurl))|\+(json|xml)$|^image/svg\+xml$',
+    re.I
+)
 
-SECRET_PATTERNS = [
-    ("Google API Key", re.compile(r'\bAIza[0-9A-Za-z-_]{35}\b')),
-    ("AWS Access Key ID", re.compile(r'\b(?:A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}\b')),
-    ("Stripe Secret Key", re.compile(r'\b(?:sk|rk)_live_[0-9a-zA-Z]{24}\b')),
-    ("OpenAI API Key", re.compile(r'\bsk-(?:proj-)?[a-zA-Z0-9_-]{32,64}\b')),
-    ("JWT Token", re.compile(r'\beyJ[A-Za-z0-9-_]{10,}\.[A-Za-z0-9-_]{10,}\.[A-Za-z0-9-_]{10,}\b'))
-]
+def is_text_content(ct, url=""):
+    if url and re.search(r'\.(m3u8|mpd|vtt|srt|json|xml|txt|css|m?js)(?:$|[?#])', url, re.I):
+        return True
+    if url and re.search(r'\.(ts|m4s|mp4|webm|aac|mp3|png|jpe?g|webp|gif|ico|woff2?)(?:$|[?#])', url, re.I):
+        return False
+    clean_ct = str(ct or "").split(";")[0].strip()
+    return not clean_ct or bool(TEXT_MIME_RE.search(clean_ct))
 
-def fast_fetch(url, timeout=7):
-    req = urllib.request.Request(url, headers={"User-Agent": UA_MAP["desktop"], "Accept": "*/*"})
-    t0 = time.time()
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as res:
-            data = res.read(3670016)
-            elapsed = round((time.time() - t0) * 1000)
-            charset = res.headers.get_content_charset() or "utf-8"
-            return {"ok": True, "status": res.status, "body": data.decode(charset, errors="replace"), "url": res.geturl(), "contentType": res.headers.get("Content-Type", ""), "ms": elapsed, "size": len(data)}
-    except Exception as e:
-        return {"ok": False, "status": getattr(e, "code", 0), "error": str(e), "body": "", "ms": round((time.time() - t0) * 1000)}
-
-def fast_scan_url(target_url, test_apis=False):
-    t0 = time.time()
-    res = fast_fetch(target_url)
-    if not res["ok"]:
-        return {"ok": False, "error": f"Failed to fetch {target_url}: {res.get('error', 'unknown')}"}
-
-    html = res["body"]
-    base_url = res["url"]
-    script_re = re.compile(r"""<script[^>]+src=["']([^"']+)["']""", re.I)
-    js_urls = [urllib.parse.urljoin(base_url, u.strip()) for u in script_re.findall(html)]
-    js_urls = [u for u in set(js_urls) if u.startswith(("http://", "https://"))][:25]
-
-    sources = [{"name": "HTML Source", "text": html}]
-    if js_urls:
-        with ThreadPoolExecutor(max_workers=8) as ex:
-            futs = {ex.submit(fast_fetch, u): u for u in js_urls}
-            for fut in as_completed(futs):
-                u = futs[fut]
-                try:
-                    r = fut.result()
-                    if r["ok"]:
-                        sources.append({"name": u.split("/")[-1].split("?")[0] or "script.js", "text": r["body"]})
-                except Exception:
-                    pass
-
-    endpoints = []
-    secrets = []
-    seen_ep = set()
-    for s in sources:
-        t = s["text"]
-        for pat in API_PATTERNS:
-            for match in pat.findall(t):
-                ep = match if isinstance(match, str) else match[0]
-                ep = ep.strip().strip("\"'\\")
-                if len(ep) >= 4 and (ep.startswith("/") or ep.startswith("http")):
-                    full = urllib.parse.urljoin(base_url, ep)
-                    if full not in seen_ep:
-                        seen_ep.add(full)
-                        endpoints.append({"endpoint": ep, "full_url": full, "source": s["name"]})
-        for sec_name, sec_pat in SECRET_PATTERNS:
-            for m in sec_pat.findall(t):
-                k = m if isinstance(m, str) else m[0]
-                secrets.append({"type": sec_name, "value": k[:8] + "..." + k[-4:], "source": s["name"]})
-
-    tested = []
-    if test_apis and endpoints:
-        test_eps = [e for e in endpoints if e["full_url"].startswith("http")][:15]
-        with ThreadPoolExecutor(max_workers=6) as ex:
-            futs = [ex.submit(fast_fetch, e["full_url"]) for e in test_eps]
-            for f in as_completed(futs):
-                try:
-                    r = f.result()
-                    tested.append({"url": r.get("url", ""), "status": r.get("status", 0), "ms": r.get("ms", 0), "snippet": r.get("body", "")[:200].strip()})
-                except Exception:
-                    pass
-
-    return {
-        "ok": True,
-        "target": target_url,
-        "finalUrl": base_url,
-        "duration": round(time.time() - t0, 2),
-        "files_analyzed": len(sources),
-        "endpoints_count": len(endpoints),
-        "secrets_count": len(secrets),
-        "endpoints": endpoints,
-        "secrets": secrets,
-        "tested_responses": tested
-    }
 
 class USVHandler(BaseHTTPRequestHandler):
+    def log_message(self, fmt, *args):
+        sys.stderr.write("[USV-PyServer] %s - %s\n" % (self.address_string(), fmt % args))
+
     def send_cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, User-Agent")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, User-Agent, Authorization, X-Requested-With")
+
+    def send_json(self, status_code, payload):
+        raw = json.dumps(payload).encode("utf-8")
+        self.send_response(status_code)
+        self.send_cors_headers()
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -158,103 +92,102 @@ class USVHandler(BaseHTTPRequestHandler):
         path = parsed.path
         query = urllib.parse.parse_qs(parsed.query)
 
-        # Health
+        # 1. Health Endpoint
         if path == "/api/health":
-            self.send_response(200)
-            self.send_cors_headers()
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok", "server": "US-MODS-Python", "time": time.time()}).encode("utf-8"))
+            self.send_json(200, {"status": "ok", "server": "US-MODS-Python-v2.3", "time": time.time()})
             return
 
-        # Fast Scan
+        # 2. Fast Scan Endpoint (/api/fast-scan)
         if path == "/api/fast-scan":
             target = query.get("url", [""])[0].strip()
             test_apis = query.get("test", ["0"])[0] in ("1", "true")
+            auth = query.get("auth", [""])[0].strip()
+            cookies = query.get("cookies", [""])[0].strip()
             if not target:
-                self.send_response(400)
-                self.send_cors_headers()
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"ok": False, "error": "URL missing"}).encode("utf-8"))
+                self.send_json(400, {"ok": False, "error": "URL missing"})
                 return
-
             if not target.startswith(("http://", "https://")):
                 target = "https://" + target
-
-            if PRIVATE_HOST_RE.match(urllib.parse.urlparse(target).hostname or ""):
-                self.send_response(400)
-                self.send_cors_headers()
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"ok": False, "error": "Private addresses not allowed"}).encode("utf-8"))
+            p = urllib.parse.urlparse(target)
+            if PRIVATE_HOST_RE.match(p.hostname or ""):
+                self.send_json(400, {"ok": False, "error": "Private addresses not allowed"})
                 return
-
-            res = fast_scan_url(target, test_apis=test_apis)
-            self.send_response(200)
-            self.send_cors_headers()
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps(res).encode("utf-8"))
+            res = run_extraction(target, test_apis=test_apis, auth=auth, cookies=cookies)
+            self.send_json(200, res)
             return
 
-        # GET /api/fetch
+        # 3. Remote HTML/Asset Fetch (/api/fetch)
         if path == "/api/fetch":
             target = query.get("url", [""])[0].strip()
             ua_choice = query.get("ua", ["desktop"])[0]
+            cookies = query.get("cookies", [""])[0].strip()
             if not target:
-                self.send_response(400)
-                self.send_cors_headers()
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"ok": False, "error": "URL sahi nahi hai."}).encode("utf-8"))
+                self.send_json(400, {"ok": False, "error": "URL sahi nahi hai."})
                 return
-
+            if not target.startswith(("http://", "https://")):
+                target = "https://" + target
             p = urllib.parse.urlparse(target)
             if p.scheme not in ("http", "https") or PRIVATE_HOST_RE.match(p.hostname or ""):
-                self.send_response(400)
-                self.send_cors_headers()
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"ok": False, "error": "Invalid or private address."}).encode("utf-8"))
+                self.send_json(400, {"ok": False, "error": "Invalid or private address."})
                 return
 
             ua_str = UA_MAP.get(ua_choice, UA_MAP["desktop"])
-            req = urllib.request.Request(target, headers={"User-Agent": ua_str, "Accept": "*/*"})
+            hdrs = {
+                "User-Agent": ua_str,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": f"{p.scheme}://{p.netloc}/"
+            }
+            if cookies:
+                hdrs["Cookie"] = cookies
+
+            req = urllib.request.Request(target, headers=hdrs)
             t0 = time.time()
             try:
-                with urllib.request.urlopen(req, timeout=8) as response:
+                with urllib.request.urlopen(req, timeout=10) as response:
                     raw_data = response.read(3670016)
                     elapsed = round((time.time() - t0) * 1000)
                     charset = response.headers.get_content_charset() or "utf-8"
                     body_text = raw_data.decode(charset, errors="replace")
                     out_headers = {k.lower(): v for k, v in response.headers.items() if k.lower() != "set-cookie"}
-                    
-                    self.send_response(200)
-                    self.send_cors_headers()
-                    self.send_header("Content-Type", "application/json; charset=utf-8")
-                    self.end_headers()
-                    self.wfile.write(json.dumps({
+                    set_ck = extract_set_cookies(response.headers)
+                    self.send_json(200, {
                         "ok": True,
                         "status": response.status,
-                        "statusText": "OK",
+                        "statusText": getattr(response, "reason", "OK") or "OK",
                         "finalUrl": response.geturl(),
                         "contentType": response.headers.get("Content-Type", ""),
                         "headers": out_headers,
+                        "cookies": set_ck,
                         "body": body_text,
                         "ms": elapsed,
                         "size": len(raw_data)
-                    }).encode("utf-8"))
+                    })
                     return
+            except urllib.error.HTTPError as e:
+                elapsed = round((time.time() - t0) * 1000)
+                raw_data = e.read(3670016) if hasattr(e, "read") else b""
+                body_text = raw_data.decode("utf-8", errors="replace")
+                out_headers = {k.lower(): v for k, v in (e.headers.items() if e.headers else []) if k.lower() != "set-cookie"}
+                set_ck = extract_set_cookies(e.headers)
+                self.send_json(200, {
+                    "ok": True,
+                    "status": e.code,
+                    "statusText": str(e.reason or ""),
+                    "finalUrl": e.geturl() if hasattr(e, "geturl") else target,
+                    "contentType": e.headers.get("Content-Type", "") if e.headers else "",
+                    "headers": out_headers,
+                    "cookies": set_ck,
+                    "body": body_text,
+                    "ms": elapsed,
+                    "size": len(raw_data)
+                })
+                return
             except Exception as e:
-                self.send_response(502)
-                self.send_cors_headers()
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"ok": False, "error": str(e)}).encode("utf-8"))
+                self.send_json(502, {"ok": False, "error": str(e)})
                 return
 
-        # Static files
+        # 4. Static Web UI Files
         rel_path = "index.html" if path in ("/", "") else path.lstrip("/")
         safe_rel = os.path.normpath(rel_path)
         if safe_rel.startswith("..") or os.path.isabs(safe_rel):
@@ -271,8 +204,8 @@ class USVHandler(BaseHTTPRequestHandler):
 
         self.send_response(200)
         self.send_header("Content-Type", mime)
-        self.send_header("Content-Length", os.path.getsize(file_path))
-        self.send_header("Cache-Control", "no-cache" if ext == ".html" else "public, max-age=3600")
+        self.send_header("Content-Length", str(os.path.getsize(file_path)))
+        self.send_header("Cache-Control", "no-cache")
         self.end_headers()
 
         with open(file_path, "rb") as f:
@@ -289,83 +222,117 @@ class USVHandler(BaseHTTPRequestHandler):
             try:
                 spec = json.loads(body_bytes.decode("utf-8", errors="replace"))
             except Exception:
-                self.send_response(400)
-                self.send_cors_headers()
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"ok": False, "error": "Invalid body"}).encode("utf-8"))
+                self.send_json(400, {"ok": False, "error": "Invalid JSON body"})
                 return
 
-            target = spec.get("url", "")
-            method = spec.get("method", "GET").upper()
-            req_headers = spec.get("headers", {})
-            payload = spec.get("body", "")
+            target = str(spec.get("url") or "").strip()
+            method = str(spec.get("method") or "GET").upper()
+            req_headers = spec.get("headers") or {}
+            payload = spec.get("body")
+            page = str(spec.get("page") or target).strip()
+            cookies = str(spec.get("cookies") or "").strip()
 
             p = urllib.parse.urlparse(target)
             if p.scheme not in ("http", "https") or PRIVATE_HOST_RE.match(p.hostname or ""):
-                self.send_response(400)
-                self.send_cors_headers()
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"ok": False, "error": "Invalid URL"}).encode("utf-8"))
+                self.send_json(400, {"ok": False, "error": "Invalid or private URL"})
                 return
 
-            headers = {k: str(v) for k, v in req_headers.items() if k.lower() not in ("host", "cookie", "connection")}
-            if "user-agent" not in [k.lower() for k in headers]:
+            headers = {
+                k: str(v)
+                for k, v in req_headers.items()
+                if k.lower() not in ("host", "connection", "content-length", "accept-encoding")
+            }
+            lower_keys = {k.lower() for k in headers}
+            if "user-agent" not in lower_keys:
                 headers["User-Agent"] = UA_MAP["desktop"]
+            if cookies and "cookie" not in lower_keys:
+                headers["Cookie"] = cookies
+            if page:
+                try:
+                    pp = urllib.parse.urlparse(page)
+                    if "referer" not in lower_keys:
+                        headers["Referer"] = page
+                    if "origin" not in lower_keys and pp.scheme and pp.netloc:
+                        headers["Origin"] = f"{pp.scheme}://{pp.netloc}"
+                except Exception:
+                    pass
 
-            data_bytes = payload.encode("utf-8") if payload and method not in ("GET", "HEAD") else None
+            data_bytes = payload.encode("utf-8") if isinstance(payload, str) and payload and method not in ("GET", "HEAD") else None
             req = urllib.request.Request(target, data=data_bytes, headers=headers, method=method)
 
             t0 = time.time()
             try:
-                with urllib.request.urlopen(req, timeout=8) as response:
+                with urllib.request.urlopen(req, timeout=10) as response:
                     raw_data = response.read(3670016)
                     elapsed = round((time.time() - t0) * 1000)
+                    ct = response.headers.get("Content-Type", "")
+                    final_url = response.geturl()
+                    text_mode = is_text_content(ct, final_url)
                     charset = response.headers.get_content_charset() or "utf-8"
-                    is_text = any(t in response.headers.get("Content-Type", "").lower() for t in ["text", "json", "javascript", "xml"])
-                    body_val = raw_data.decode(charset, errors="replace") if is_text else raw_data.hex()
-                    
-                    self.send_response(200)
-                    self.send_cors_headers()
-                    self.send_header("Content-Type", "application/json")
-                    self.end_headers()
-                    self.wfile.write(json.dumps({
+                    body_val = raw_data.decode(charset, errors="replace") if text_mode else base64.b64encode(raw_data).decode("ascii")
+                    out_headers = {k.lower(): v for k, v in response.headers.items() if k.lower() != "set-cookie"}
+                    set_ck = extract_set_cookies(response.headers)
+
+                    self.send_json(200, {
                         "ok": True,
                         "status": response.status,
-                        "statusText": "OK",
-                        "finalUrl": response.geturl(),
-                        "contentType": response.headers.get("Content-Type", ""),
-                        "headers": {k.lower(): v for k, v in response.headers.items() if k.lower() != "set-cookie"},
-                        "encoding": "text" if is_text else "hex",
+                        "statusText": getattr(response, "reason", "OK") or "OK",
+                        "finalUrl": final_url,
+                        "contentType": ct,
+                        "headers": out_headers,
+                        "cookies": set_ck,
+                        "encoding": "text" if text_mode else "base64",
                         "body": body_val,
                         "size": len(raw_data),
                         "ms": elapsed
-                    }).encode("utf-8"))
+                    })
                     return
+            except urllib.error.HTTPError as e:
+                elapsed = round((time.time() - t0) * 1000)
+                raw_data = e.read(3670016) if hasattr(e, "read") else b""
+                ct = e.headers.get("Content-Type", "") if e.headers else "text/plain"
+                final_url = e.geturl() if hasattr(e, "geturl") else target
+                text_mode = is_text_content(ct, final_url)
+                body_val = raw_data.decode("utf-8", errors="replace") if text_mode else base64.b64encode(raw_data).decode("ascii")
+                out_headers = {k.lower(): v for k, v in (e.headers.items() if e.headers else []) if k.lower() != "set-cookie"}
+                set_ck = extract_set_cookies(e.headers)
+
+                self.send_json(200, {
+                    "ok": True,
+                    "status": e.code,
+                    "statusText": str(e.reason or ""),
+                    "finalUrl": final_url,
+                    "contentType": ct,
+                    "headers": out_headers,
+                    "cookies": set_ck,
+                    "encoding": "text" if text_mode else "base64",
+                    "body": body_val,
+                    "size": len(raw_data),
+                    "ms": elapsed
+                })
+                return
             except Exception as e:
-                self.send_response(502)
-                self.send_cors_headers()
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"ok": False, "error": str(e)}).encode("utf-8"))
+                self.send_json(502, {"ok": False, "error": str(e)})
                 return
 
         self.send_error(404, "Not Found")
 
+
 def run():
     server_address = ("", PORT)
-    httpd = HTTPServer(server_address, USVHandler)
-    print("=" * 60)
-    print(f"  🐍 US MODS Python Server Running on port {PORT}")
-    print(f"  🔗 Local URL: http://localhost:{PORT}")
+    httpd = ThreadingHTTPServer(server_address, USVHandler)
+    print("=" * 62)
+    print(f"  🐍 US MODS Multi-Threaded Python Server v2.3 Running on port {PORT}")
+    print(f"  🔗 Local URL:     http://localhost:{PORT}")
     print(f"  ⚡ Fast Scan API: /api/fast-scan?url=<URL>&test=1")
-    print("=" * 60)
+    print(f"  🛡️ Proxy Engine:  /api/proxy & /api/fetch (Cookie Jar + Base64 Ready)")
+    print("=" * 62)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         print("\nStopping Python server...")
         httpd.server_close()
+
 
 if __name__ == "__main__":
     run()
