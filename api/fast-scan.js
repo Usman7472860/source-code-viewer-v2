@@ -29,7 +29,7 @@ const SECRET_PATTERNS = [
   ['Bearer Token', /\bBearer\s+[a-zA-Z0-9_\-\.]{20,}\b/gi]
 ];
 
-async function fastFetch(url, timeoutMs = 5000) {
+async function fastFetch(url, timeoutMs = 5000, extraHeaders = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   const t0 = performance.now();
@@ -37,7 +37,7 @@ async function fastFetch(url, timeoutMs = 5000) {
     const r = await fetch(url, {
       redirect: 'follow',
       signal: ctrl.signal,
-      headers: { 'user-agent': UA, accept: '*/*' }
+      headers: Object.assign({ 'user-agent': UA, accept: 'application/json, text/plain, */*' }, extraHeaders)
     });
     const { buf } = await readLimited(r, MAX_BYTES);
     const body = decode(buf, r.headers.get('content-type'));
@@ -123,10 +123,14 @@ module.exports = async (req, res) => {
 
   let target = '';
   let testApis = false;
+  let authHeader = '';
+  let cookieHeader = '';
   try {
     const parsed = new URL(req.url, 'http://localhost');
     target = (parsed.searchParams.get('url') || '').trim();
     const tParam = parsed.searchParams.get('test') || '1';
+    authHeader = (parsed.searchParams.get('auth') || req.headers['x-usv-auth'] || '').trim();
+    cookieHeader = (parsed.searchParams.get('cookies') || req.headers['x-usv-cookies'] || '').trim();
     testApis = tParam === '1' || tParam === 'true';
   } catch (e) {}
 
@@ -200,7 +204,10 @@ module.exports = async (req, res) => {
   if (testApis && totalEndpoints.length) {
     const targets = totalEndpoints.filter(e => /^https?:\/\//i.test(e.full_url)).slice(0, 12);
     const testRes = await Promise.all(targets.map(async ep => {
-      const r = await fastFetch(ep.full_url, 3500);
+      const extraH = {};
+      if (authHeader) extraH['authorization'] = authHeader.includes(' ') ? authHeader : ('Bearer ' + authHeader);
+      if (cookieHeader) extraH['cookie'] = cookieHeader;
+      const r = await fastFetch(ep.full_url, 3500, extraH);
       return {
         url: ep.full_url,
         endpoint: ep.endpoint,
