@@ -1225,6 +1225,16 @@ window.USV_live = {
   reset: reset,
   logDoc: logDoc,
   exportHar: exportHar,
+  lastAuthHeader: function () {
+    for (var i = ORDER.length - 1; i >= 0; i--) {
+      var e = NET.get(ORDER[i]);
+      if (e && e.reqHeaders) {
+        var auth = e.reqHeaders['authorization'] || e.reqHeaders['Authorization'] || e.reqHeaders['x-auth-token'] || e.reqHeaders['x-api-key'];
+        if (auth) return auth;
+      }
+    }
+    return '';
+  },
   apiList: function () {
     return ORDER.map(function (id) { return NET.get(id); }).filter(function (e) {
       return e.kind === 'fetch' || e.kind === 'xhr' || e.kind === 'beacon' || e.kind === 'stream' || (e.kind === 'document' && e.method !== 'GET');

@@ -490,6 +490,12 @@ dialog textarea{width:100%;height:min(44dvh,340px);padding:10px;border:1px solid
       </div>
     </div>
 
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)">
+      <span style="font:700 11.5px var(--f-code);color:var(--tab)">🔑 Auth Token / Bearer:</span>
+      <input id="pyAuthInput" type="text" placeholder="Paste valid Bearer token or Authorization header for 401 APIs..." style="flex:1;min-width:180px;height:30px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);font:500 12px var(--f-code)">
+      <button class="sm" id="pyApplyAuth" type="button" style="background:var(--tab);color:var(--bg);border-color:var(--tab)">Apply & Re-Test</button>
+    </div>
+
     <div class="py-stat-grid" id="pyStatsGrid">
       <div class="py-stat-card"><b id="stFiles">0</b><span>Files Analyzed</span></div>
       <div class="py-stat-card"><b id="stEps">0</b><span>Hardcoded APIs</span></div>
@@ -581,7 +587,7 @@ async function getRemote(url, req) {
   var ua = $('#optUa') ? $('#optUa').value : 'desktop';
   var cookies = getCookiesFor(url);
   if (apiMode === 'api') {
-    if (!req || req.method === 'GET') {
+    if (!req || (req.method === 'GET' && (!req.headers || !Object.keys(req.headers).length))) {
       var r = await fetch('/api/fetch?url=' + encodeURIComponent(url) + '&ua=' + encodeURIComponent(ua) + (cookies ? '&cookies=' + encodeURIComponent(cookies) : ''));
       var j = await r.json();
       if (!j.ok) throw new Error(j.error || 'Server error (' + r.status + ')');
@@ -1410,10 +1416,31 @@ function scanCodeForPyExtractor(text, sourceName, baseUrl) {
   return { endpoints: endpoints, secrets: secrets };
 }
 
+function getActiveAuthHeader() {
+  var inp = $('#pyAuthInput');
+  var val = inp && inp.value ? inp.value.trim() : '';
+  if (!val && window.USV_live && window.USV_live.lastAuthHeader) {
+    val = window.USV_live.lastAuthHeader() || '';
+    if (val && inp) inp.value = val;
+  }
+  if (!val) {
+    try {
+      var u = new URL($('#url').value || '');
+      var tok = u.searchParams.get('token') || u.searchParams.get('access_token') || u.searchParams.get('auth') || u.searchParams.get('jwt');
+      if (tok) { val = 'Bearer ' + tok; if (inp) inp.value = val; }
+    } catch (e) {}
+  }
+  if (val && !val.includes(' ') && !val.includes(':')) val = 'Bearer ' + val;
+  return val;
+}
+
 async function testEndpointLive(epUrl) {
   var t0 = performance.now();
   try {
-    var r = await getRemote(epUrl, { method: 'GET' });
+    var hdrs = { accept: 'application/json, text/plain, */*' };
+    var auth = getActiveAuthHeader();
+    if (auth) hdrs['authorization'] = auth;
+    var r = await getRemote(epUrl, { method: 'GET', headers: hdrs });
     return {
       url: epUrl,
       status: r.status || 200,
@@ -1523,7 +1550,9 @@ async function runFastExtractorButton() {
   // Try server backend /api/fast-scan first if available
   try {
     pyLog('[*] Connecting to fast-scan engine for: ' + rawUrl);
-    var apiRes = await fetch('/api/fast-scan?url=' + encodeURIComponent(rawUrl) + '&test=1');
+    var activeAuth = getActiveAuthHeader();
+    var activeCookies = getCookiesFor(rawUrl);
+    var apiRes = await fetch('/api/fast-scan?url=' + encodeURIComponent(rawUrl) + '&test=1' + (activeAuth ? '&auth=' + encodeURIComponent(activeAuth) : '') + (activeCookies ? '&cookies=' + encodeURIComponent(activeCookies) : ''));
     if (apiRes.ok) {
       var data = await apiRes.json();
       if (data && data.ok) {
@@ -1681,6 +1710,7 @@ $('#bFastExtractBar').addEventListener('click', runFastExtractorButton);
 $('#bPyServer').addEventListener('click', startPythonServerButton);
 $('#bPyServerBar').addEventListener('click', startPythonServerButton);
 $('#pyReRun').addEventListener('click', runFastExtractorButton);
+var bApplyAuth = $('#pyApplyAuth'); if (bApplyAuth) bApplyAuth.addEventListener('click', runFastExtractorButton);
 $('#pyDlgClose').addEventListener('click', function () { $('#pyRunnerDlg').close(); });
 $('#pyRunnerDlg').addEventListener('click', function (e) { if (e.target === this) this.close(); });
 
